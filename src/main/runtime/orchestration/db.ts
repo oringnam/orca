@@ -283,7 +283,7 @@ type RunListCursor = {
   id: string
 }
 
-// Schema versions: v2 'heartbeat'+last_heartbeat_at, v3 delivered_at, v4 task-creator terminal, v5 task_title/display_name, v6 pane identity, v7 lightweight Runs, v8 crash-safe Run deliveries, v9 durable question threads, v10 Dispatch capabilities, v11 durable mutation receipts, v12 composed worker state, v18 post-v6 version-skew repair, v19 adopted legacy Runs and compatibility receipts, v20 legacy question backfill, v21 legacy scheduler-loss provenance, v22 dispatch assignee lookup, v23 worker terminal resource ownership, v24 creator-incarnation authority, v25 active Dispatch handle lookup, v26 indexed mutation receipt capacity, v27 dispatch agent-launch recovery.
+// Schema versions: v2 'heartbeat'+last_heartbeat_at, v3 delivered_at, v4 task-creator terminal, v5 task_title/display_name, v6 pane identity, v7 dispatch launch recovery + lightweight Runs, v8 crash-safe Run deliveries, v9 durable question threads, v10 Dispatch capabilities, v11 durable mutation receipts, v12 composed worker state, v18 post-v6 version-skew repair, v19 adopted legacy Runs and compatibility receipts, v20 legacy question backfill, v21 legacy scheduler-loss provenance, v22 dispatch assignee lookup, v23 worker terminal resource ownership, v24 creator-incarnation authority, v25 active Dispatch handle lookup, v26 indexed mutation receipt capacity, v27 dispatch agent-launch recovery repair.
 const SCHEMA_VERSION = 27
 
 function hardenOrchestrationDatabaseFiles(dbPath: string | ':memory:'): void {
@@ -297,7 +297,6 @@ function hardenOrchestrationDatabaseFiles(dbPath: string | ':memory:'): void {
     }
   }
 }
-
 export class OrchestrationDb {
   private db: Database.Database
 
@@ -700,12 +699,60 @@ export class OrchestrationDb {
           this.db.exec(`ALTER TABLE tasks ADD COLUMN display_name TEXT`)
         }
       }
+      // v5 → v6: pane-identity columns, exactly as main shipped them — a db
+      // stamped 6 by a main build has run precisely this step and nothing else.
       if (current < 6) {
         if (!this.hasColumn('dispatch_contexts', 'assignee_pane_key')) {
           this.db.exec(`ALTER TABLE dispatch_contexts ADD COLUMN assignee_pane_key TEXT`)
         }
         if (!this.hasColumn('messages', 'sender_pane_key')) {
           this.db.exec(`ALTER TABLE messages ADD COLUMN sender_pane_key TEXT`)
+        }
+      }
+      // v6 → v7: rebuild dispatch_contexts to widen the status CHECK for the
+      // additive 'forgotten' disposition and add the U6 identity/launch-failure
+      // columns. Guarded on the new column so a fresh v7 db (already created
+      // with the full schema by createTables) skips the rebuild.
+      if (current < 7) {
+        if (!this.hasColumn('dispatch_contexts', 'requested_agent')) {
+          // A main-v6 db has assignee_pane_key with live data that must survive
+          // the rebuild; a v5 db gains the column in the v6 step above. The
+          // hasColumn check keeps the copy list valid for any odd intermediate
+          // shape rather than assuming the pane column is present.
+          const paneKeyColumn = this.hasColumn('dispatch_contexts', 'assignee_pane_key')
+            ? ', assignee_pane_key'
+            : ''
+          this.db.exec(`
+            CREATE TABLE dispatch_contexts_new (
+              id                    TEXT PRIMARY KEY,
+              task_id               TEXT NOT NULL,
+              assignee_handle       TEXT,
+              assignee_pane_key     TEXT,
+              status                TEXT NOT NULL DEFAULT 'pending'
+                CHECK(status IN ('pending', 'dispatched', 'completed', 'failed', 'circuit_broken', 'forgotten')),
+              failure_count         INTEGER NOT NULL DEFAULT 0,
+              last_failure          TEXT,
+              dispatched_at         TEXT,
+              completed_at          TEXT,
+              created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+              last_heartbeat_at     TEXT,
+              requested_agent       TEXT,
+              base_agent            TEXT,
+              agent_launch_failure  TEXT
+            );
+            INSERT INTO dispatch_contexts_new (
+              id, task_id, assignee_handle, status, failure_count, last_failure,
+              dispatched_at, completed_at, created_at, last_heartbeat_at${paneKeyColumn}
+            )
+            SELECT
+              id, task_id, assignee_handle, status, failure_count, last_failure,
+              dispatched_at, completed_at, created_at, last_heartbeat_at${paneKeyColumn}
+            FROM dispatch_contexts;
+            DROP TABLE dispatch_contexts;
+            ALTER TABLE dispatch_contexts_new RENAME TO dispatch_contexts;
+            CREATE INDEX idx_dispatch_task ON dispatch_contexts(task_id);
+            CREATE INDEX idx_dispatch_status ON dispatch_contexts(status);
+          `)
         }
       }
       if (current < 7) {

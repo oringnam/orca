@@ -1,4 +1,4 @@
-import type { TuiAgent } from '../../../src/shared/types'
+import type { BuiltInTuiAgent, TuiAgent } from '../../../src/shared/types'
 
 // Why: mobile tests run from the mobile package only, so runtime imports of
 // desktop shared modules can break Vitest transforms in CI. Keep this list
@@ -40,9 +40,9 @@ export const MOBILE_TUI_AGENT_AUTO_PICK_ORDER = [
   'hermes',
   'devin',
   'openclaw'
-] as const satisfies readonly TuiAgent[]
+] as const satisfies readonly BuiltInTuiAgent[]
 
-export const MOBILE_TUI_AGENT_LABELS: Record<TuiAgent, string> = {
+export const MOBILE_TUI_AGENT_LABELS: Record<BuiltInTuiAgent, string> = {
   claude: 'Claude',
   'claude-agent-teams': 'Claude Agent Teams',
   openclaude: 'OpenClaude',
@@ -81,7 +81,7 @@ export const MOBILE_TUI_AGENT_LABELS: Record<TuiAgent, string> = {
   openclaw: 'OpenClaw'
 }
 
-export const MOBILE_TUI_AGENT_FAVICON_DOMAINS: Partial<Record<TuiAgent, string>> = {
+export const MOBILE_TUI_AGENT_FAVICON_DOMAINS: Partial<Record<BuiltInTuiAgent, string>> = {
   openclaude: 'openclaude.gitlawb.com',
   grok: 'x.ai',
   copilot: 'github.com',
@@ -115,8 +115,14 @@ export const MOBILE_TUI_AGENT_FAVICON_DOMAINS: Partial<Record<TuiAgent, string>>
   openclaw: 'openclaw.ai'
 }
 
-export function isMobileTuiAgent(value: unknown): value is TuiAgent {
-  return MOBILE_TUI_AGENT_AUTO_PICK_ORDER.includes(value as TuiAgent)
+// Why: membership in the built-in parity order proves the id is a built-in;
+// custom ids reach mobile only through the synced dynamic catalog (later units)
+// and never through these static tables.
+export function isMobileTuiAgent(value: unknown): value is BuiltInTuiAgent {
+  return (
+    typeof value === 'string' &&
+    (MOBILE_TUI_AGENT_AUTO_PICK_ORDER as readonly string[]).includes(value)
+  )
 }
 
 function normalizeDisabledMobileTuiAgents(value: unknown): TuiAgent[] {

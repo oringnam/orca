@@ -25,6 +25,7 @@ import {
   subscribeHostStateListener,
   type CloseEntryOptions
 } from './host-client-context-state'
+import { mountAgentSync, type AgentSyncHandle } from './agent-sync-connection'
 import { loadHosts } from './host-store'
 import { openHostLogicalClient } from './host-logical-client'
 import type { MobileConnectionPath } from './stable-logical-rpc-client'
@@ -35,6 +36,9 @@ type StoreEntry = {
   state: ConnectionState
   refCount: number
   unsubState: () => void
+  // One agent catalog/reference sync per connection: owns a single client-event
+  // subscription, disposed before the client is replaced or closed.
+  agentSync: AgentSyncHandle
 }
 
 export type RpcClientContextValue = {
@@ -90,6 +94,7 @@ export function RpcClientProvider({ children }: { children: ReactNode }) {
       primedHostsRef.current.delete(hostId)
     }
     entry?.unsubState()
+    entry?.agentSync.dispose()
     storeRef.current.delete(hostId)
     entry?.client.close()
     notifyHostState(hostId, 'disconnected')
@@ -165,11 +170,14 @@ export function RpcClientProvider({ children }: { children: ReactNode }) {
         cur.state = state
         notifyHostState(hostId, state)
       })
+      // One agent catalog/reference sync per connection; it hydrates on connect
+      // and owns a single client-event subscription (see mountAgentSync).
       const entry: StoreEntry = {
         client,
         state: client.getState(),
         refCount: pendingAcquisitionsRef.current.get(hostId) ?? 0,
-        unsubState
+        unsubState,
+        agentSync: mountAgentSync(client, hostId)
       }
       pendingAcquisitionsRef.current.delete(hostId)
       storeRef.current.set(hostId, entry)
@@ -258,6 +266,7 @@ export function RpcClientProvider({ children }: { children: ReactNode }) {
       const savedRefCount = entry?.refCount ?? pendingAcquisitionsRef.current.get(hostId) ?? 0
       if (entry) {
         entry.unsubState()
+        entry.agentSync.dispose()
         entry.client.close()
         storeRef.current.delete(hostId)
       }

@@ -14,6 +14,7 @@ export async function createBlankWorkspace(args: {
   repoId: string
   baseName: string
   createdWithAgentId: TuiAgent | undefined
+  launchParams?: Record<string, unknown>
   comment: string | undefined
   setupDecision: WorkspaceCreateSetupDecision
   supportsIdempotentCutoverRetry: boolean | Promise<boolean>
@@ -23,11 +24,12 @@ export async function createBlankWorkspace(args: {
     baseName: args.baseName,
     supportsIdempotentCutoverRetry: args.supportsIdempotentCutoverRetry,
     buildParams: (name) => {
+      const launchParams = args.launchParams ?? agentLaunchCreateFields(args.createdWithAgentId)
       const params: Record<string, unknown> = {
         repo: `id:${args.repoId}`,
         setupDecision: args.setupDecision,
         name,
-        ...agentLaunchCreateFields(args.createdWithAgentId)
+        ...launchParams
       }
       if (args.comment) {
         params.comment = args.comment

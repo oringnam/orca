@@ -1,5 +1,6 @@
 import type { DiffComment, TuiAgent } from '../../../src/shared/types'
 import type { AgentStatusEntry } from '../../../src/shared/agent-status-types'
+import type { PersistedLaunchNoticeState } from '../../../src/shared/agent-launch-contract'
 import type { MobileBrowserTab } from '../browser/MobileBrowserPane'
 import type { MobileTerminalTheme } from '../terminal/terminal-webview-contract'
 import type { MobileDiffLine } from './mobile-diff-lines'
@@ -26,6 +27,8 @@ export type MobileSessionTab =
       /** Host-provided launch context still parked as an unsent TUI-input draft. */
       launchDraft?: string
       launchDraftCreatedAt?: number
+      // Host-owned launch notices + dismissal token mirrored from the snapshot.
+      launchNotices?: PersistedLaunchNoticeState
       terminalTheme?: MobileTerminalTheme
       isActive: boolean
     }

@@ -1,5 +1,6 @@
 import type { MobileTerminalTheme } from '../terminal/terminal-webview-contract'
 import type { AgentStatusEntry } from '../../../src/shared/agent-status-types'
+import type { PersistedLaunchNoticeState } from '../../../src/shared/agent-launch-contract'
 
 export type TerminalRecord = {
   handle: string
@@ -21,6 +22,9 @@ export type MobileTerminalSessionTab = {
   launchDraft?: string
   launchDraftCreatedAt?: number
   terminalTheme?: MobileTerminalTheme
+  // Host-owned launch notices + dismissal token mirrored from the session
+  // snapshot; the mobile banner renders these and dismissal is host-authoritative.
+  launchNotices?: PersistedLaunchNoticeState
   isActive: boolean
 }
 
@@ -92,7 +96,10 @@ function mobileSessionTabEqual(
         a.launchDraft === b.launchDraft &&
         a.launchDraftCreatedAt === b.launchDraftCreatedAt &&
         JSON.stringify(a.agentStatus ?? null) === JSON.stringify(b.agentStatus ?? null) &&
-        JSON.stringify(a.terminalTheme ?? null) === JSON.stringify(b.terminalTheme ?? null)
+        JSON.stringify(a.terminalTheme ?? null) === JSON.stringify(b.terminalTheme ?? null) &&
+        // Why: a host-side dismissal changes only launchNotices; without this the
+        // snapshot compares equal and the banner would stay on screen (stale).
+        JSON.stringify(a.launchNotices ?? null) === JSON.stringify(b.launchNotices ?? null)
       )
     case 'markdown':
       return (

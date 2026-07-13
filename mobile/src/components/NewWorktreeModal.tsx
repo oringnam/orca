@@ -29,15 +29,19 @@ import {
   type SetupHookTrust
 } from '../tasks/setup-hook-trust'
 import { isMobileTuiAgentEnabled } from '../tasks/mobile-tui-agents'
+import { hostSupportsAgentLaunchIdentity } from '../session/agent-launch-identity-capability'
+import { buildInteractiveLaunchParams } from './interactive-worktree-launch-params'
 import type { PersistedTrustedOrcaHooks, TuiAgent } from '../../../src/shared/types'
 import type { SshConnectionState } from '../../../src/shared/ssh-types'
 import {
+  buildSelectableNewWorktreeAgentOptions,
   NEW_WORKTREE_AGENT_OPTIONS as AGENT_OPTIONS,
   NEW_WORKTREE_BLANK_AGENT as BLANK_TERMINAL,
   pickPreferredNewWorktreeAgent,
   resolveNewWorktreeAgentSelection,
   type NewWorktreeAgentOption as AgentOption
 } from './new-worktree-agent-selection'
+import { useAgentCatalogSnapshot } from './use-agent-catalog-snapshot'
 import { getCachedRepos, setCachedRepos } from '../cache/repo-cache'
 import { useLastVisitedWorktreeRepoId } from '../worktree/use-last-visited-worktree-repo'
 import {
@@ -48,7 +52,6 @@ import {
 import { createBlankWorkspace } from '../tasks/blank-workspace-create'
 import { createWorkspaceFromComposerSource } from '../tasks/source-workspace-create'
 import { useNewWorktreeRuntimeCapabilities } from '../tasks/worktree-create-capability'
-import { normalizeWorkspaceAgent } from '../tasks/workspace-agent-selection'
 import {
   filterAvailableTaskProviders,
   normalizeVisibleTaskProviders,
@@ -221,6 +224,7 @@ function NewWorktreeModalContent({
     () => getComposerRepoWorktreeBranches(existingWorktrees ?? [], selectedRepo?.id ?? null),
     [existingWorktrees, selectedRepo]
   )
+  const agentCatalog = useAgentCatalogSnapshot(hostId)
 
   const composer = useMobileComposerSource({
     client,
@@ -583,6 +587,18 @@ function NewWorktreeModalContent({
       } catch {
         // Best-effort refresh; the runtime validates the same setting before spawning.
       }
+      let hasIdentityCapability = false
+      try {
+        const statusResponse = await client.sendRequest('status.get')
+        if (statusResponse.ok) {
+          hasIdentityCapability = hostSupportsAgentLaunchIdentity(
+            (statusResponse as RpcSuccess).result
+          )
+        }
+      } catch {
+        // Best-effort probe; an unreachable status keeps the legacy client-assembled
+        // launch path, which every host still accepts.
+      }
       if (
         selectedAgent.id !== '__blank__' &&
         !isMobileTuiAgentEnabled(selectedAgent.id, latestRuntimeSettings?.disabledTuiAgents)
@@ -592,6 +608,17 @@ function NewWorktreeModalContent({
         setError('Selected agent is disabled. Choose an enabled agent before creating.')
         return
       }
+
+      // Capable hosts own launch resolution: send the agent identity only and let the
+      // host derive the command + env. Incapable hosts keep the base startupAgent path.
+      const launchParams = hasIdentityCapability
+        ? buildInteractiveLaunchParams({
+            selectedAgentId: selectedAgent.id,
+            hasIdentityCapability: true,
+            deferToHostDefault: !selectedAgentResolution.agentOverridden,
+            legacyCommand: undefined
+          })
+        : undefined
 
       // Why: blank name field — match desktop behavior by computing the
       // next available marine-creature name at submit time and passing it
@@ -645,7 +672,10 @@ function NewWorktreeModalContent({
             selection: createSelection,
             targetRepoId: selectedRepo.id,
             setupDecision,
-            agent: { choice: normalizeWorkspaceAgent(selectedAgent.id) ?? 'blank' },
+            agent: {
+              choice: selectedAgent.id === '__blank__' ? 'blank' : selectedAgent.id,
+              launchParams
+            },
             workspaceName: trimmedName || undefined,
             note: trimmedNote,
             nameIsAutoManaged: composer.isNameAutoManaged,
@@ -656,6 +686,7 @@ function NewWorktreeModalContent({
             repoId: selectedRepo.id,
             baseName,
             createdWithAgentId,
+            launchParams,
             comment: trimmedNote,
             setupDecision,
             supportsIdempotentCutoverRetry: getWorktreeCreateCutoverSupport()
@@ -680,19 +711,15 @@ function NewWorktreeModalContent({
     !creating &&
     !sshGate.requiresConnection &&
     (!needsSetupChoice || setupDecisionChoice != null)
-  const visibleAgentOptions =
-    detectedAgentIds === null
-      ? AGENT_OPTIONS.filter(
-          (agent) =>
-            agent.id !== '__blank__' &&
-            isMobileTuiAgentEnabled(agent.id, runtimeSettings?.disabledTuiAgents)
-        )
-      : AGENT_OPTIONS.filter(
-          (agent) =>
-            agent.id !== '__blank__' &&
-            detectedAgentIds.has(agent.id) &&
-            isMobileTuiAgentEnabled(agent.id, runtimeSettings?.disabledTuiAgents)
-        )
+  // Customs appear only when the host publishes a version:1 catalog (the identity-
+  // launch capability signal); the projection returns built-ins for a null/oversize
+  // snapshot, so passing includeCustomAgents unconditionally stays a safe gate flip.
+  const visibleAgentOptions = buildSelectableNewWorktreeAgentOptions({
+    snapshot: agentCatalog,
+    includeCustomAgents: true,
+    detectedAgentIds,
+    disabledTuiAgents: runtimeSettings?.disabledTuiAgents
+  })
   const pickerAgentOptions = [...visibleAgentOptions, BLANK_TERMINAL]
   const repoPickerItems = useMemo(
     () => repos.map((repo) => ({ id: repo.id, label: repo.displayName, repo })),

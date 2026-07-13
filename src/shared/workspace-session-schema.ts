@@ -21,6 +21,7 @@ import type {
 } from './types'
 import { isValidTerminalTabId } from './terminal-tab-id'
 import { parseExecutionHostId, type ExecutionHostId } from './execution-host'
+import { persistedLaunchNoticeStateSchema } from './agent-launch-notice-schema'
 import { isTuiAgent } from './tui-agent-config'
 import { isWorkspaceKey } from './workspace-scope'
 import {
@@ -105,7 +106,10 @@ const terminalTabSchema = z.object({
   launchAgent: z
     .custom<TuiAgent>((v) => isTuiAgent(v))
     .optional()
-    .catch(undefined)
+    .catch(undefined),
+  // Why: host-owned launch notices ride with the tab; `.catch(undefined)` keeps
+  // a malformed notice from failing the whole-session parse.
+  launchNotices: persistedLaunchNoticeStateSchema.optional().catch(undefined)
 })
 
 // ─── Unified tab model ──────────────────────────────────────────────

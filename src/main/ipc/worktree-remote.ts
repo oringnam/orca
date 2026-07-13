@@ -10,7 +10,7 @@ import type {
   AutomationWorkspaceProvenance,
   CliWorkspaceProvenance,
   CreateWorktreeArgs,
-  CreateWorktreeResult,
+  CreatedWorktreeResult,
   GitPushTarget,
   GlobalSettings,
   LocalBaseRefRefreshResult,
@@ -60,7 +60,8 @@ import {
 import { requireSshGitProvider } from '../providers/ssh-git-dispatch'
 import { getSshFilesystemProvider } from '../providers/ssh-filesystem-dispatch'
 import type { SshGitProvider } from '../providers/ssh-git-provider'
-import { TUI_AGENT_CONFIG, isTuiAgent } from '../../shared/tui-agent-config'
+import { isTuiAgent } from '../../shared/tui-agent-config'
+import { resolveTuiAgentConfig } from '../../shared/custom-tui-agents'
 import { isWindowsAbsolutePathLike } from '../../shared/cross-platform-path'
 import { runWorktreeChangeInvalidators } from './worktree-change-invalidators'
 import {
@@ -154,8 +155,8 @@ type RemoteWorktreeCreateBasePlan = {
 }
 
 type StagedStartupResult = {
-  startupTerminal?: CreateWorktreeResult['startupTerminal']
-  activationSetup?: CreateWorktreeResult['setup']
+  startupTerminal?: CreatedWorktreeResult['startupTerminal']
+  activationSetup?: CreatedWorktreeResult['setup']
   didSpawnSetup: boolean
   warning?: string
 }
@@ -180,7 +181,7 @@ function appendWorktreeCreateWarning(current: string | undefined, next: string):
 }
 
 function getSetupRunnerCommandPlatformForLaunch(
-  setup: CreateWorktreeResult['setup'],
+  setup: CreatedWorktreeResult['setup'],
   fallbackPlatform: 'windows' | 'posix'
 ): 'windows' | 'posix' {
   return getSetupRunnerCommandPlatformForPath(setup?.runnerScriptPath ?? '', fallbackPlatform)
@@ -214,7 +215,7 @@ function recordWorkspaceLineageForCreatedWorktree(
   args: CreateWorktreeArgs,
   worktree: Worktree,
   createdAt: number
-): CreateWorktreeResult['workspaceLineage'] {
+): CreatedWorktreeResult['workspaceLineage'] {
   if (!args.parentWorkspace || !worktree.instanceId) {
     return null
   }
@@ -257,8 +258,8 @@ async function spawnLocalStartupAndSetupTerminals(args: {
   runtime: OrcaRuntimeService | undefined
   worktree: Pick<Worktree, 'id' | 'path'>
   startup: CreateWorktreeArgs['startup']
-  setup: CreateWorktreeResult['setup']
-  defaultTabs: CreateWorktreeResult['defaultTabs']
+  setup: CreatedWorktreeResult['setup']
+  defaultTabs: CreatedWorktreeResult['defaultTabs']
   settings: GlobalSettings
   createdWithAgent: CreateWorktreeArgs['createdWithAgent']
 }): Promise<StagedStartupResult> {
@@ -269,7 +270,7 @@ async function spawnLocalStartupAndSetupTerminals(args: {
 
   let warning: string | undefined
   let startupTerminalHandle: string | null = null
-  let startupTerminal: CreateWorktreeResult['startupTerminal']
+  let startupTerminal: CreatedWorktreeResult['startupTerminal']
 
   let sequencedStartup = startup
   let wrappedSetupCommandStr: string | undefined
@@ -293,9 +294,15 @@ async function spawnLocalStartupAndSetupTerminals(args: {
   }
 
   try {
-    // Why: only after `git worktree add` + metadata registration is the path safe for a runtime PTY to boot the agent while setup runs alongside.
-    if (isTuiAgent(createdWithAgent)) {
-      const preset = TUI_AGENT_CONFIG[createdWithAgent].preflightTrust
+    // Resolve to the base config before reading it: a custom id's trust preset
+    // comes from its base harness, never a static custom-id registry lookup.
+    const trustConfig = resolveTuiAgentConfig(
+      createdWithAgent,
+      settings.customTuiAgents,
+      settings.deletedCustomTuiAgents
+    )
+    if (trustConfig) {
+      const preset = trustConfig.preflightTrust
       try {
         if (preset === 'cursor') {
           markCursorWorkspaceTrusted(worktree.path)
@@ -1152,7 +1159,7 @@ async function createRemoteSetupRunnerScript(
   script: string,
   gitProvider: SshGitProvider,
   fsProvider: IFilesystemProvider
-): Promise<CreateWorktreeResult['setup']> {
+): Promise<CreatedWorktreeResult['setup']> {
   const useWindowsFormat = isWindowsAbsolutePathLike(worktreePath)
   // Why: SSH terminals choose their shell on the remote host; local Windows
   // preferences cannot safely select a remote runner format or launch command.
@@ -1486,7 +1493,7 @@ export async function createRemoteWorktree(
   repo: Repo,
   store: Store,
   mainWindow: BrowserWindow
-): Promise<CreateWorktreeResult> {
+): Promise<CreatedWorktreeResult> {
   const timing = createWorktreeCreateTimingRecorder()
   const provider = requireSshGitProvider(repo.connectionId!)
   const fsProvider = getSshFilesystemProvider(repo.connectionId!)
@@ -1837,8 +1844,8 @@ export async function createRemoteWorktree(
 
   // Why: shared/symlink paths, `orca.yaml` shared directories, and `.worktreeinclude` copies are local-only; remote (SSH) support needs a new relay method + auth surface, so all are skipped here.
 
-  let setup: CreateWorktreeResult['setup']
-  let defaultTabs: CreateWorktreeResult['defaultTabs']
+  let setup: CreatedWorktreeResult['setup']
+  let defaultTabs: CreatedWorktreeResult['defaultTabs']
   if (fsProvider) {
     await timing.time('prepare_setup', async () => {
       const yamlHooks = await readRemoteOrcaYaml(fsProvider, created.path)
@@ -1897,7 +1904,7 @@ export async function createLocalWorktree(
   store: Store,
   mainWindow: BrowserWindow,
   runtime?: OrcaRuntimeService
-): Promise<CreateWorktreeResult> {
+): Promise<CreatedWorktreeResult> {
   const timing = createWorktreeCreateTimingRecorder()
   const settings = store.getSettings()
   const worktreePathSettings = getWorktreePathSettings(repo, settings)
@@ -2488,8 +2495,8 @@ export async function createLocalWorktree(
   }
 
   // Why: the worktree's base-branch `orca.yaml` is authoritative; we don't re-gate on content parity with the primary checkout since benign divergence silently disabled setup (#1280).
-  let setup: CreateWorktreeResult['setup']
-  let defaultTabs: CreateWorktreeResult['defaultTabs']
+  let setup: CreatedWorktreeResult['setup']
+  let defaultTabs: CreatedWorktreeResult['defaultTabs']
   await timing.time('prepare_setup', async () => {
     const createdYamlHooks = loadHooks(worktreePath)
     const createdEffectiveHooks = getEffectiveHooksFromConfig(repo, createdYamlHooks)

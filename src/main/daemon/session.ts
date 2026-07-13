@@ -87,6 +87,8 @@ export type SessionOptions = {
   rows: number
   terminalHandle?: string
   launchAgent?: TuiAgent
+  /** Host admission launch token persisted at creation for crash reconciliation. */
+  launchToken?: string
   subprocess: SubprocessHandle
   shellReadySupported: boolean
   shellReadyTimeoutMs?: number
@@ -112,6 +114,7 @@ export class Session {
   readonly terminalHandle: string | null
   readonly launchAgent: TuiAgent | null
   readonly wslDistro: string | null
+  readonly launchToken: string | null
   private _state: SessionState = 'running'
   private _shellState: ShellReadyState
   private _exitCode: number | null = null
@@ -146,6 +149,7 @@ export class Session {
     this.terminalHandle = opts.terminalHandle ?? null
     this.launchAgent = opts.launchAgent ?? null
     this.wslDistro = opts.wslDistro ?? null
+    this.launchToken = opts.launchToken ?? null
     this.subprocess = opts.subprocess
     this.onSessionExit = opts.onExit
     const size = normalizePtySize(opts.cols, opts.rows)

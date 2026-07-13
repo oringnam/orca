@@ -100,6 +100,8 @@ export async function createOrAttachTerminalSession(
     rows: size.rows,
     terminalHandle: opts.env?.ORCA_TERMINAL_HANDLE,
     launchAgent: opts.launchAgent,
+    // Why: surviving daemon sessions must retain admission identity across main-process crashes.
+    ...(opts.launchToken ? { launchToken: opts.launchToken } : {}),
     subprocess,
     ownerBackend: resolvePtyOwnerBackend({
       platform: process.platform,

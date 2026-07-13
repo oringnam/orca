@@ -70,6 +70,8 @@ export type CreateOrAttachRequest = {
     launchAgent?: TuiAgent
     /** Rejects an absent session instead of interpreting mount uncertainty as create permission. */
     attachOnly?: boolean
+    /** Host admission launch token persisted with the daemon session record. */
+    launchToken?: string
     /** Explicit Windows shell override selected by the user (e.g. 'wsl.exe').
      *  The daemon forwards this to its subprocess spawner so each tab honors
      *  the shell picked in the "+" menu or the persisted default-shell setting,

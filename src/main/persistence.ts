@@ -24,10 +24,10 @@ import { createHash, randomUUID } from 'node:crypto'
 import type {
   Automation,
   AutomationCreateInput,
-  AutomationDispatchResult,
   AutomationPrecheckResult,
   AutomationRunOutputSnapshot,
   AutomationRun,
+  AutomationRunPersistInput,
   AutomationSchedulerOwner,
   AutomationRunTrigger,
   AutomationUpdateInput
@@ -93,6 +93,10 @@ import {
 } from '../shared/workspace-linked-item'
 import { isWorkspaceLinkedItemSourceContextMatch } from '../shared/workspace-linked-item-source-context'
 import type { MigrationUnsupportedPtyEntry } from '../shared/agent-status-types'
+import {
+  createPinnedPreV1Backup,
+  migrateAgentCatalogSchema
+} from './agent-launch/agent-catalog-schema-migration'
 import { MOBILE_PAIRING_USERDATA_FILES } from './runtime/mobile-pairing-files'
 import { normalizePersistedMobileClientTabSelections } from './runtime/client-session-tab-selection-persistence'
 import { sanitizeWorkspaceSessionTerminalRetirements } from './runtime/mobile-session-terminal-persistence-retirement'
@@ -239,6 +243,7 @@ import {
   SOURCE_CONTROL_TEXT_ACTION_IDS
 } from '../shared/source-control-ai-actions'
 import { normalizeDisabledTuiAgents } from '../shared/tui-agent-selection'
+import { isTuiAgent } from '../shared/tui-agent-config'
 import {
   DEFAULT_TUI_AGENT_ARGS,
   DEFAULT_TUI_AGENT_ENV,
@@ -2812,6 +2817,9 @@ export class Store {
   private gitUsernameCache = new Map<string, string>()
   private readonly protectedSecrets = new ProtectedSecretPersistence()
   private loadNeedsSave = false
+  // Why: a failed pinned pre-v1 backup blocks the agent-catalog migration; the
+  // error is held for Settings to report instead of silently retrying writes.
+  private agentCatalogMigrationErrorValue: string | null = null
   private settingsChangeListeners = new Set<
     (
       updates: Partial<GlobalSettings>,
@@ -3300,6 +3308,24 @@ export class Store {
         const migratedDisabledTuiAgents = normalizeDisabledTuiAgents(
           parsed.settings?.disabledTuiAgents
         )
+        // Agent-catalog v1 schema migration (legacy null default -> 'auto'). The
+        // pinned pre-v1 backup must exist before the first v1 write; a backup
+        // failure keeps the profile pre-v1 and surfaces a local migration error.
+        const agentCatalogMigration = migrateAgentCatalogSchema({
+          settings: parsed.settings,
+          preV1RawContents: raw,
+          createBackup: () => createPinnedPreV1Backup(dataFile, raw)
+        })
+        if (agentCatalogMigration.didMigrate) {
+          this.loadNeedsSave = true
+        }
+        if (agentCatalogMigration.backupError) {
+          this.agentCatalogMigrationErrorValue = agentCatalogMigration.backupError
+          console.error(
+            '[persistence] agent-catalog v1 migration blocked; pinned pre-v1 backup failed:',
+            agentCatalogMigration.backupError
+          )
+        }
         const migratedAgentYoloDefaults = migrateAgentYoloDefaults(parsed.settings)
         if (
           parsed.settings?.agentYoloDefaultsMigrated !== true ||
@@ -3492,7 +3518,10 @@ export class Store {
             voice: {
               ...getDefaultVoiceSettings(),
               ...parsed.settings?.voice
-            }
+            },
+            // Applied last so the one-time v1 stamp (or the forced pre-v1 shape
+            // after a failed pinned backup) wins over both defaults and parsed.
+            ...agentCatalogMigration.settingsPatch
           },
           // Why: legacy 'recent' meant the smart sort; migrate once on the raw value so a fresh 'recent' default isn't remigrated.
           ui: (() => {
@@ -5234,6 +5263,11 @@ export class Store {
       ...updates,
       name:
         updates.name !== undefined ? updates.name.trim() || 'Untitled automation' : current.name,
+      // A legacy client that can't represent a custom agent id may send agentId
+      // null/undefined/malformed; the `...updates` spread would silently clobber a
+      // stored custom id and drop its tombstone reference. Only a well-formed id
+      // (built-in or custom syntax) applies; anything else preserves the stored id.
+      agentId: isTuiAgent(updates.agentId) ? updates.agentId : current.agentId,
       precheck: Object.hasOwn(updates, 'precheck')
         ? normalizeAutomationPrecheck(updates.precheck)
         : normalizeAutomationPrecheck(current.precheck),
@@ -5343,7 +5377,7 @@ export class Store {
     return run
   }
 
-  updateAutomationRun(result: AutomationDispatchResult): AutomationRun {
+  updateAutomationRun(result: AutomationRunPersistInput): AutomationRun {
     const index = (this.state.automationRuns ?? []).findIndex((entry) => entry.id === result.runId)
     if (index === -1) {
       throw new Error('Automation run not found.')
@@ -5379,6 +5413,14 @@ export class Store {
         : normalizeAutomationPrecheckResult(current.precheckResult),
       usage: Object.hasOwn(result, 'usage') ? (result.usage ?? null) : (current.usage ?? null),
       error: result.error ?? null,
+      // U6 additive: preserve when the update omits them so a generic dispatch
+      // update never drops a launch failure the recovery card is rendering.
+      agentLaunchFailure: Object.hasOwn(result, 'agentLaunchFailure')
+        ? (result.agentLaunchFailure ?? null)
+        : (current.agentLaunchFailure ?? null),
+      agentLaunchForgottenAt: Object.hasOwn(result, 'agentLaunchForgottenAt')
+        ? (result.agentLaunchForgottenAt ?? null)
+        : (current.agentLaunchForgottenAt ?? null),
       startedAt: current.startedAt ?? now,
       dispatchedAt: result.status === 'dispatched' ? now : current.dispatchedAt
     }
@@ -5754,6 +5796,12 @@ export class Store {
 
   getSettings(): GlobalSettings {
     return this.state.settings
+  }
+
+  /** Non-null when the agent-catalog v1 migration was blocked by a failed pinned
+   *  pre-v1 backup; the profile remains pre-v1 until the next successful load. */
+  getAgentCatalogMigrationError(): string | null {
+    return this.agentCatalogMigrationErrorValue
   }
 
   onSettingsChanged(

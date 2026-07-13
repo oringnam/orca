@@ -36,7 +36,7 @@ import {
   terminalStreamByteLength,
   terminalStreamByteLengthExceeds
 } from '../terminal-stream-byte-length'
-import { isTuiAgent } from '../../../../shared/tui-agent-config'
+import { isBuiltInTuiAgent } from '../../../../shared/tui-agent-config'
 import { isTerminalQueryReply } from '../../../../shared/terminal-query-reply'
 import {
   EMPTY_TERMINAL_REPLY_QUERY_SCAN_STATE,
@@ -44,6 +44,7 @@ import {
   type TerminalReplyQuerySequence,
   type TerminalReplyQueryScanState
 } from '../../../../shared/terminal-reply-query-scan'
+import { AgentLaunchInputSchema } from './agent-launch-spawn-schema'
 import {
   MOBILE_SNAPSHOT_BYTE_BUDGET,
   MOBILE_SUBSCRIBE_SCROLLBACK_ROWS
@@ -949,7 +950,10 @@ const TerminalCreateParams = z.object({
     })
     .optional(),
   launchToken: OptionalString,
-  launchAgent: z.string().refine(isTuiAgent).optional(),
+  // Why: legacy field accepts built-in ids only; a custom id is admitted solely
+  // on the sanctioned `agentLaunch` path (U3).
+  launchAgent: z.string().refine(isBuiltInTuiAgent).optional(),
+  agentLaunch: AgentLaunchInputSchema.optional(),
   terminalColorQueryReplies: z
     .object({
       foreground: z.string().max(128).optional(),
@@ -1419,38 +1423,60 @@ export const TERMINAL_METHODS: RpcAnyMethod[] = [
   defineMethod({
     name: 'terminal.create',
     params: TerminalCreateParams,
-    handler: async (params, { runtime, pairedDeviceId, clientId }) => ({
-      terminal: await runtime.dedupeTerminalCreate(
-        pairedDeviceId ?? clientId ?? 'local',
-        params.worktree,
-        params.clientMutationId,
-        params.reconcileExisting === true,
-        (canonicalWorktreeSelector, preAllocatedHandle) =>
-          runtime.createTerminal(canonicalWorktreeSelector, {
-            command: params.command,
-            startupCommandDelivery: params.startupCommandDelivery,
-            env: params.env,
-            envToDelete: params.envToDelete,
-            ...(params.launchConfig ? { launchConfig: params.launchConfig } : {}),
-            ...(params.resumeProviderSession
-              ? { resumeProviderSession: params.resumeProviderSession }
-              : {}),
-            ...(params.launchToken ? { launchToken: params.launchToken } : {}),
-            ...(params.launchAgent ? { launchAgent: params.launchAgent } : {}),
-            ...(params.terminalColorQueryReplies
-              ? { terminalColorQueryReplies: params.terminalColorQueryReplies }
-              : {}),
-            title: params.title,
-            focus: params.focus === true,
-            rendererBacked: params.rendererBacked === true,
-            activate: params.activate === true,
-            presentation: params.presentation,
-            tabId: params.tabId,
-            leafId: params.leafId,
-            ...(preAllocatedHandle ? { preAllocatedHandle } : {})
-          })
-      )
-    })
+    handler: async (params, { runtime, pairedDeviceId, clientId, clientKind }) => {
+      const baseOpts = {
+        command: params.command,
+        startupCommandDelivery: params.startupCommandDelivery,
+        env: params.env,
+        envToDelete: params.envToDelete,
+        ...(params.launchConfig ? { launchConfig: params.launchConfig } : {}),
+        ...(params.resumeProviderSession
+          ? { resumeProviderSession: params.resumeProviderSession }
+          : {}),
+        ...(params.launchToken ? { launchToken: params.launchToken } : {}),
+        ...(params.launchAgent ? { launchAgent: params.launchAgent } : {}),
+        ...(params.terminalColorQueryReplies
+          ? { terminalColorQueryReplies: params.terminalColorQueryReplies }
+          : {}),
+        // Authenticated RPC scope for host-resolved launches; never client JSON.
+        clientKind,
+        title: params.title,
+        focus: params.focus === true,
+        rendererBacked: params.rendererBacked === true,
+        activate: params.activate === true,
+        presentation: params.presentation,
+        tabId: params.tabId,
+        leafId: params.leafId
+      }
+
+      const create = (canonicalWorktreeSelector: string | undefined, preAllocatedHandle?: string) =>
+        params.agentLaunch
+          ? runtime.createTerminal(canonicalWorktreeSelector, {
+              ...baseOpts,
+              agentLaunch: params.agentLaunch,
+              ...(preAllocatedHandle ? { preAllocatedHandle } : {})
+            })
+          : runtime.createTerminal(canonicalWorktreeSelector, {
+              ...baseOpts,
+              ...(preAllocatedHandle ? { preAllocatedHandle } : {})
+            })
+      const result =
+        params.clientMutationId || params.reconcileExisting === true
+          ? await runtime.dedupeTerminalCreate(
+              pairedDeviceId ?? clientId ?? 'local',
+              params.worktree,
+              params.clientMutationId,
+              params.reconcileExisting === true,
+              create
+            )
+          : await create(params.worktree)
+
+      // A pre-spawn typed failure is an RPC success with no terminal created.
+      if (!('handle' in result)) {
+        return { agentLaunch: result.agentLaunch }
+      }
+      return { terminal: result }
+    }
   }),
   defineMethod({
     name: 'terminal.split',

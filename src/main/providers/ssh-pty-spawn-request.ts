@@ -39,6 +39,8 @@ export function buildSshPtySpawnRequest(args: {
           startupIngress: options.startupIngress
         }
       : {}),
+    // Why: relay persistence must receive admission identity in the spawn request.
+    ...(options.launchToken ? { launchToken: options.launchToken } : {}),
     ...(options.agentSessionEnsure ? { agentSessionEnsure: options.agentSessionEnsure } : {}),
     ...(args.supportsCreateOperation
       ? { agentSessionCreateOperationId: options.agentSessionCreateOperationId }

@@ -5,6 +5,7 @@ import { restampAiVaultListResult } from '../../../ai-vault/session-list-results
 import { AI_VAULT_AGENTS, AI_VAULT_SCOPE_PATHS_MAX_COUNT } from '../../../../shared/ai-vault-types'
 import { AI_VAULT_SESSION_TITLE_REQUEST_MAX_COUNT } from '../../../../shared/ai-vault-session-title'
 import { LOCAL_EXECUTION_HOST_ID, parseExecutionHostId } from '../../../../shared/execution-host'
+import { AgentLaunchVaultResumeEntrySchema } from './agent-launch-spawn-schema'
 
 // Why: bound limit + scopePaths so a client cannot force an unbounded scan.
 // Each scopePath is a host-local match prefix (validated/capped, never used for
@@ -72,6 +73,18 @@ export const AiVaultSessionTitlesParams = z.object({
     .max(AI_VAULT_SESSION_TITLE_REQUEST_MAX_COUNT)
 })
 
+// Host-owned 'copy' vault-resume: the client echoes a discovered entry's identity
+// (filePath omitted on this untrusted surface — the host re-derives it) and the
+// runtime re-validates it against its own fresh scan before returning the
+// assembled command string. Unknown/mismatch → in-band invalid_launch_snapshot.
+export const AiVaultResumeCommandParams = z.object({
+  entry: AgentLaunchVaultResumeEntrySchema
+})
+
+export const AiVaultResumeDetailsParams = z.object({
+  entry: AgentLaunchVaultResumeEntrySchema
+})
+
 export const AI_VAULT_METHODS: RpcMethod[] = [
   defineMethod({
     name: 'aiVault.resolveSessionTitles',
@@ -108,5 +121,15 @@ export const AI_VAULT_METHODS: RpcMethod[] = [
         // client-provided runtime/SSH stamp escape that host boundary.
         executionHostId: LOCAL_EXECUTION_HOST_ID
       })
+  }),
+  defineMethod({
+    name: 'aiVault.resumeCommand',
+    params: AiVaultResumeCommandParams,
+    handler: (params, { runtime }) => runtime.resolveAiVaultResumeCommand(params.entry)
+  }),
+  defineMethod({
+    name: 'aiVault.resumeDetails',
+    params: AiVaultResumeDetailsParams,
+    handler: (params, { runtime }) => runtime.resolveAiVaultResumeDetails(params.entry)
   })
 ]

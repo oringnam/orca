@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { getAgentCatalog } from '@/lib/agent-catalog'
+import { setDefaultTuiAgent } from '@/lib/agent-catalog-authoring'
 import { useAppStore } from '@/store'
 import { applyDocumentTheme } from '@/lib/document-theme'
 import { track } from '@/lib/telemetry'
@@ -9,6 +10,7 @@ import { buildAgentPickedPayload } from './agent-picked-payload'
 import { ONBOARDING_FINAL_STEP, ONBOARDING_FLOW_VERSION } from '../../../../shared/constants'
 import type { EventProps } from '../../../../shared/telemetry-events'
 import type { GlobalSettings, OnboardingState, TuiAgent } from '../../../../shared/types'
+import { toLegacyAutoPreference } from '../../../../shared/tui-agent-selection'
 import { STEPS, type StepNumber } from './use-onboarding-flow-types'
 import { persistStep, useCloseWith, usePersistCurrentStep } from './use-onboarding-flow-persistence'
 import { resolveOnboardingSettingsHydration } from './onboarding-settings-hydration'
@@ -165,7 +167,7 @@ export async function prepareSkippedOnboardingPreferences({
     }
     // Why: skipping bypasses step persistence, so save the visible agent choice before closing.
     if (currentStepId === 'agent' && selectedAgent) {
-      await updateSettings({ defaultTuiAgent: selectedAgent })
+      await setDefaultTuiAgent(selectedAgent)
     }
     return true
   } catch (err) {
@@ -216,11 +218,11 @@ export function useOnboardingFlow(
     'forward'
   )
   const [stepIndex, setStepIndex] = useState(initialStep)
-  const [selectedAgent, setSelectedAgent] = useState<TuiAgent | null>(
-    settings?.defaultTuiAgent && settings.defaultTuiAgent !== 'blank'
-      ? settings.defaultTuiAgent
-      : null
-  )
+  const [selectedAgent, setSelectedAgent] = useState<TuiAgent | null>(() => {
+    // 'auto' (migrated legacy null) means no fixed initial agent.
+    const pref = toLegacyAutoPreference(settings?.defaultTuiAgent)
+    return pref && pref !== 'blank' ? pref : null
+  })
   const [yoloPermissions, setYoloPermissions] = useState(
     resolveAgentPermissionModeSummary({
       agentDefaultArgs: settings?.agentDefaultArgs,

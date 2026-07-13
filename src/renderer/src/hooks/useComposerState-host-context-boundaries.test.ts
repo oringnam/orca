@@ -242,7 +242,11 @@ describe('useComposerState host-context boundaries', () => {
       'const submitFolderTarget',
       'const submit = useCallback'
     )
-    expect(submitSection).toContain('isRemote: folderTargetIsRemote')
+    // Why: the folder launch is identity-only now — the host resolves command,
+    // args, env, and remote-ness, so the composer no longer threads isRemote or
+    // client-resolved agent args/env into the folder submit.
+    expect(submitSection).not.toContain('isRemote: folderTargetIsRemote')
+    expect(submitSection).not.toContain('resolveTuiAgentLaunchArgs')
     expect(submitSection).toContain(
       "launchSource: telemetrySource === 'onboarding' ? 'onboarding' : 'new_workspace_composer'"
     )
@@ -739,18 +743,16 @@ describe('useComposerState host-context boundaries', () => {
     expect(section).not.toContain('getRuntimeRepoBaseRefDefault')
   })
 
-  it('plans new workspace agent startup from the selected repo runtime', () => {
-    expect(HOOK_SOURCE).toContain('const selectedRepoAgentLaunchPlatform = useMemo')
-    expect(HOOK_SOURCE).toContain('getLocalRepoProjectExecutionRuntimeContext')
-    expect(HOOK_SOURCE).toContain('getAgentLaunchPlatformForRepo(selectedRepo, projectRuntime)')
-
+  it('leaves agent launch command/platform resolution to the host for create submits', () => {
     const fullSubmit = sourceBetween(
       HOOK_SOURCE,
       'const submit = useCallback',
       'const submitQuick = useCallback'
     )
-    expect(fullSubmit).toContain('platform: selectedRepoAgentLaunchPlatform')
-    expect(fullSubmit).toContain('startupDraft: startupPlan.draftPrompt')
+    // The create submits name only the requested agent + prompt in an
+    // identity-only agentLaunch; the host resolves command/args/env/platform.
+    expect(fullSubmit).toContain("selection: { kind: 'agent', agent: tuiAgent }")
+    expect(fullSubmit).not.toContain('platform: selectedRepoAgentLaunchPlatform')
     expect(fullSubmit).not.toContain('platform: CLIENT_PLATFORM')
 
     const quickSubmit = sourceBetween(
@@ -758,24 +760,20 @@ describe('useComposerState host-context boundaries', () => {
       'const submitQuick = useCallback',
       'const createGateInput'
     )
-    expect(quickSubmit).toContain('platform: selectedRepoAgentLaunchPlatform')
+    expect(quickSubmit).toContain("selection: { kind: 'agent', agent }")
+    expect(quickSubmit).not.toContain('platform: selectedRepoAgentLaunchPlatform')
     expect(quickSubmit).not.toContain('platform: CLIENT_PLATFORM')
   })
 
-  // Why: activation no longer rebuilds a startup from `createdWithAgent`, so this
-  // caller's own `startup` is the only thing that launches the agent it planned.
-  it('passes its own startup to activation when submit planned an agent', () => {
+  it('does not duplicate the host-spawned create agent during activation', () => {
     const activation = sourceBetween(
       HOOK_SOURCE,
       'const activation = activateAndRevealWorktree(worktree.id, {',
-      'if (startupPlan) {'
+      'setSidebarOpen(true)'
     )
 
-    expect(activation).toContain('...(startupPlan && !backendSpawnedStartup')
-    expect(activation).toContain('backendStartupTerminalSpawned: true')
-    expect(activation).toContain('command: startupPlan.launchCommand')
-    expect(activation).toContain('launchAgent: tuiAgent')
-    // The removed activation-time fallback must not come back through this caller.
+    expect(activation).toContain('hostSpawnedPrimary: true')
+    expect(activation).not.toContain('startup:')
     expect(HOOK_SOURCE).not.toContain('buildCreatedAgentReopenStartup')
   })
 
@@ -823,17 +821,21 @@ describe('useComposerState host-context boundaries', () => {
     expect(fullSubmit).toMatch(
       /submitShouldRunIssueAutomation[\s\S]*canUseIssueCommandForLinkedItemProvider\(submitLinkedWorkItemProvider\)/
     )
+    // The direct submit names the requested agent + interactive prompt in the
+    // identity-only agentLaunch; the host resolves the command and delivery.
     expect(fullSubmit).toContain('prompt: submitStartupPrompt')
-    expect(fullSubmit).toContain('const shouldSeedInitialAgentStatus =')
-    expect(fullSubmit).toContain('...(shouldSeedInitialAgentStatus')
+    expect(fullSubmit).toContain("selection: { kind: 'agent', agent: tuiAgent }")
+    expect(fullSubmit).toContain('allowEmptyPromptLaunch: true')
 
     const quickSubmit = sourceBetween(
       HOOK_SOURCE,
       'const submitQuick = useCallback',
       'const createGateInput'
     )
-    expect(quickSubmit).toContain('agent === null || !quickDraftPrompt')
-    expect(quickSubmit).toContain('startupPlan.draftPrompt = quickDraftPrompt')
+    // The quick submit declares draft delivery for a linked work item's body;
+    // the host owns native-flag-vs-paste.
+    expect(quickSubmit).toContain('quickDraftPrompt')
+    expect(quickSubmit).toContain("promptDelivery: 'draft'")
   })
 
   it('selects the failed Jira source host before opening integration settings', () => {

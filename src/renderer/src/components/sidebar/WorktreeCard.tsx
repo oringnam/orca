@@ -1,6 +1,7 @@
 import React from 'react'
 
 import { WorktreeCardSurface } from './worktree-card-surface'
+import { WorktreeCardBackgroundLaunchFailures } from './WorktreeCardBackgroundLaunchFailures'
 import type { WorktreeCardProps } from './worktree-card-model'
 import { useWorktreeCardController } from './use-worktree-card-controller'
 
@@ -76,7 +77,12 @@ const WorktreeCard = React.memo(function WorktreeCard({
     statusPrDisplay
   })
 
-  return <WorktreeCardSurface card={card} />
+  return (
+    <>
+      <WorktreeCardSurface card={card} />
+      <WorktreeCardBackgroundLaunchFailures worktreeId={worktree.id} />
+    </>
+  )
 })
 
 export default WorktreeCard

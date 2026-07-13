@@ -27,9 +27,6 @@ type UseSourceControlAgentActionStartArgs = {
   groupId?: string | null
   promptDelivery: 'auto-submit' | 'draft' | 'submit-after-ready'
   launchPlatform?: NodeJS.Platform
-  /** Why: SSH hosts launch the plain `orca` shim, so the previewed command must
-   * drop the Linux-only `orca-ide` rename to match the real launch. */
-  isRemote?: boolean
   launchSource: LaunchSource
   connectionUnavailable: boolean
   refreshDetectedAgents: () => Promise<TuiAgent[]>
@@ -80,7 +77,6 @@ export function useSourceControlAgentActionStart({
   groupId,
   promptDelivery,
   launchPlatform,
-  isRemote,
   launchSource,
   connectionUnavailable,
   refreshDetectedAgents,
@@ -104,24 +100,12 @@ export function useSourceControlAgentActionStart({
       return buildSourceControlAgentDeliveryPlan({
         selectedAgent,
         commandInput,
-        agentArgs,
         promptDelivery,
         detectedAgents: currentDetectedAgents,
-        connectionUnavailable,
-        launchPlatform,
-        isRemote
+        connectionUnavailable
       })
     },
-    [
-      agentArgs,
-      commandInput,
-      connectionUnavailable,
-      promptDelivery,
-      refreshDetectedAgents,
-      selectedAgent,
-      launchPlatform,
-      isRemote
-    ]
+    [commandInput, connectionUnavailable, promptDelivery, refreshDetectedAgents, selectedAgent]
   )
 
   const startWithDetectedAgents = useCallback(

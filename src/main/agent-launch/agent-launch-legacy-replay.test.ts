@@ -41,7 +41,11 @@ describe('buildLegacyResumeReplay', () => {
   it('appends resume argv once for every resumable base', () => {
     for (const base of RESUMABLE_TUI_AGENTS) {
       const key = providerSessionKeyForResumableBase(base)
-      const providerSession = { key, id: 'sess-9' } as const
+      const providerSession = {
+        key,
+        id: 'sess-9',
+        ...(base === 'pi' ? { transcriptPath: '/tmp/pi/session.jsonl' } : {})
+      } as const
       const result = replay({ baseAgent: base, requestedAgent: base, providerSession })
       expect(result.ok, `base ${base}`).toBe(true)
       if (!result.ok) {
@@ -56,6 +60,25 @@ describe('buildLegacyResumeReplay', () => {
         expect(occurrences, `base ${base} flag ${lastFlag}`).toBe(1)
       }
     }
+  })
+
+  it('uses and preserves the captured OMP resume file path', () => {
+    const result = replay({
+      baseAgent: 'omp',
+      requestedAgent: 'omp',
+      legacyLaunchConfig: {
+        agentCommand: 'omp',
+        agentArgs: '',
+        agentEnv: {},
+        ompResumeFilePath: '/custom/omp/project/session.jsonl'
+      }
+    })
+    expect(result.ok && result.launchCommand).toContain(
+      "'--resume' '/custom/omp/project/session.jsonl'"
+    )
+    expect(result.ok && result.launchConfig.ompResumeFilePath).toBe(
+      '/custom/omp/project/session.jsonl'
+    )
   })
 
   it('strips Orca attribution and tmux identity env before replay', () => {

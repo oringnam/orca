@@ -18,6 +18,7 @@ import {
 } from '../../../../shared/commit-message-agent-spec'
 import { getCommitMessageModelDiscoveryHostKeyForScope } from '../../../../shared/commit-message-host-key'
 import { getRuntimeGitScope } from '../../runtime/runtime-git-client'
+import { saveSourceControlAiSettings } from '@/lib/agent-catalog-authoring'
 import { useAppStore } from '../../store'
 import { Input } from '../ui/input'
 import { Label } from '../ui/label'
@@ -31,7 +32,6 @@ import { HostedReviewCreationDefaults } from './HostedReviewCreationDefaults'
 
 type CommitMessageAiPaneProps = {
   settings: GlobalSettings
-  updateSettings: (updates: Partial<GlobalSettings>) => void | Promise<void>
   writeSourceControlAiSettings?: (patch: SourceControlAiSettingsPatch) => Promise<void>
   onCustomPromptDirtyChange?: (dirty: boolean) => void
   customPromptDiscardSignal?: number
@@ -93,7 +93,6 @@ export function getCommitMessageSettingsPaneDiscoveryHostKey(
 
 export function CommitMessageAiPane({
   settings,
-  updateSettings,
   writeSourceControlAiSettings,
   onCustomPromptDirtyChange,
   customPromptDiscardSignal,
@@ -112,12 +111,7 @@ export function CommitMessageAiPane({
         const latestSettings = useAppStore.getState().settings ?? settings
         const current = readSettings(latestSettings)
         const resolvedPatch = typeof patch === 'function' ? patch(current) : patch
-        await updateSettings({
-          sourceControlAi: {
-            ...current,
-            ...resolvedPatch
-          }
-        })
+        await saveSourceControlAiSettings({ ...current, ...resolvedPatch })
       })
     settingsWriteQueueRef.current = next
     return next

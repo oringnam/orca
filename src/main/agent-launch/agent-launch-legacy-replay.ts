@@ -85,7 +85,12 @@ export function buildLegacyResumeReplay(input: LegacyReplayInput): LegacyReplayR
 
   // Provider resume flags append to the one-shot command only. An unresumable
   // base or a session whose key type does not match the base cannot resume.
-  const resumeArgv = getAgentResumeArgv(input.baseAgent, input.providerSession)
+  const ompResumeFilePath = input.legacyLaunchConfig.ompResumeFilePath?.trim()
+  const resumeArgv = getAgentResumeArgv(
+    input.baseAgent,
+    input.providerSession,
+    ompResumeFilePath
+  )
   if (!resumeArgv) {
     return INVALID
   }
@@ -99,7 +104,12 @@ export function buildLegacyResumeReplay(input: LegacyReplayInput): LegacyReplayR
     ok: true,
     launchCommand,
     // Durable config: base command/args only (no resume flags), cleaned env.
-    launchConfig: { agentCommand: command, agentArgs: trimmedArgs, agentEnv: cleanedEnv },
+    launchConfig: {
+      agentCommand: command,
+      agentArgs: trimmedArgs,
+      agentEnv: cleanedEnv,
+      ...(ompResumeFilePath ? { ompResumeFilePath } : {})
+    },
     requestedAgent: input.requestedAgent,
     baseAgent: input.baseAgent
   }

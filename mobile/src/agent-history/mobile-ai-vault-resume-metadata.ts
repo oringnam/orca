@@ -1,9 +1,7 @@
 import type { RpcClient } from '../transport/rpc-client'
 import type { Worktree } from '../worktree/workspace-list-types'
-import {
-  RESUME_RPC_TIMEOUT_MS,
-  type MobileAiVaultResumeSettings
-} from '../session/ai-vault-resume-launch'
+import type { MobileAiVaultResumeSettings } from '../session/ai-vault-resume-launch'
+import { RESUME_RPC_TIMEOUT_MS } from '../session/ai-vault-resume-preparation'
 import { hostSupportsAgentLaunchIdentity } from '../session/agent-launch-identity-capability'
 import type {
   MobileAiVaultResumeFolderWorkspace,

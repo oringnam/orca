@@ -7,12 +7,12 @@ import {
   buildMobileAiVaultResumeEntry,
   buildMobileAiVaultResumeLaunch,
   createMobileAiVaultResumeMutationRegistry,
-  prepareMobileAiVaultSessionResume,
   resolveMobileAiVaultResumePlatform,
   resumeAiVaultSessionInTerminal,
   resumeAiVaultSessionViaHostArm,
   type MobileAiVaultResumeSettings
 } from '../session/ai-vault-resume-launch'
+import { prepareMobileAiVaultSessionResume } from '../session/ai-vault-resume-preparation'
 import { resolveMobileResumeOutcomeDisplay } from '../session/ai-vault-resume-outcome'
 import { loadMobileResumeMetadata } from './mobile-ai-vault-resume-metadata'
 import type { AiVaultSession } from '../../../src/shared/ai-vault-types'

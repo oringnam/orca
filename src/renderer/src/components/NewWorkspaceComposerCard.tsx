@@ -18,14 +18,8 @@ import { SwitchIndicator } from '@/components/ui/switch'
 import { SettingsSwitch } from '@/components/settings/SettingsFormControls'
 import type RepoCombobox from '@/components/repo/RepoCombobox'
 import AgentCombobox from '@/components/agent/AgentCombobox'
-import { mergeCustomAgentCatalogEntries } from '@/components/agent/custom-agent-catalog-entries'
-import { getAgentCatalog } from '@/lib/agent-catalog'
-import {
-  DEFAULT_DISABLED_TUI_AGENTS,
-  filterEnabledTuiAgents
-} from '../../../shared/tui-agent-selection'
+import type { AgentCatalogEntry } from '@/lib/agent-catalog'
 import { setDefaultTuiAgent } from '@/lib/agent-catalog-authoring'
-import { useLocalAgentCatalog } from '@/hooks/useLocalAgentCatalog'
 import { useAppStore } from '@/store'
 import { cn } from '@/lib/utils'
 import { WORKSPACE_FILE_PATH_MIME } from '@/lib/workspace-file-drag'
@@ -88,6 +82,7 @@ type NewWorkspaceComposerCardProps = {
   nameInputRef?: React.RefObject<HTMLInputElement | null>
   quickAgent: TuiAgent | null
   onQuickAgentChange: (agent: TuiAgent | null) => void
+  quickAgentOptions: AgentCatalogEntry[]
   eligibleRepos: RepoOption[]
   repoId: string
   projectOptions?: NewWorkspaceProjectOption[]
@@ -136,7 +131,6 @@ type NewWorkspaceComposerCardProps = {
   smartNameJiraSourceContext?: TaskSourceContext | null
   /** Advisory shown under the name field when a fork PR can't accept maintainer pushes. */
   forkPushWarning: string | null
-  detectedAgentIds: Set<TuiAgent> | null
   onOpenAgentSettings: () => void
   advancedOpen: boolean
   onToggleAdvanced: () => void
@@ -302,6 +296,7 @@ export default function NewWorkspaceComposerCard({
   nameInputRef,
   quickAgent,
   onQuickAgentChange,
+  quickAgentOptions,
   eligibleRepos,
   repoId,
   projectOptions = EMPTY_PROJECT_OPTIONS,
@@ -347,7 +342,6 @@ export default function NewWorkspaceComposerCard({
   smartNameGitHubSourceContext,
   smartNameJiraSourceContext,
   forkPushWarning,
-  detectedAgentIds,
   onOpenAgentSettings,
   advancedOpen,
   onToggleAdvanced,
@@ -387,12 +381,6 @@ export default function NewWorkspaceComposerCard({
   const activeModal = useAppStore((s) => s.activeModal)
   // 'auto' is the migrated legacy null default; treat it as Auto in the picker.
   const defaultTuiAgent = toLegacyAutoPreference(useAppStore((s) => s.settings?.defaultTuiAgent))
-  const disabledTuiAgents = useAppStore(
-    (s) => s.settings?.disabledTuiAgents ?? DEFAULT_DISABLED_TUI_AGENTS
-  )
-  // Custom agents live in the local catalog snapshot, not GlobalSettings, so the
-  // quick-launch picker needs its own read to offer them alongside built-ins.
-  const { snapshot: localAgentCatalog } = useLocalAgentCatalog()
   const nameInputFocusFrameRef = React.useRef<number | null>(null)
   const branchNameInputId = React.useId()
   const submitShortcutModifierLabel = getScreenSubmitModifierLabel()
@@ -474,25 +462,6 @@ export default function NewWorkspaceComposerCard({
       nameInputRef?.current?.focus()
     })
   }, [cancelNameInputFocusFrame, nameInputRef])
-
-  const visibleQuickAgents = React.useMemo(() => {
-    const enabledIds = new Set(
-      filterEnabledTuiAgents(
-        getAgentCatalog().map((agent) => agent.id),
-        disabledTuiAgents
-      )
-    )
-    const builtIns = getAgentCatalog().filter(
-      (agent) =>
-        enabledIds.has(agent.id) && (detectedAgentIds === null || detectedAgentIds.has(agent.id))
-    )
-    return mergeCustomAgentCatalogEntries(
-      builtIns,
-      localAgentCatalog,
-      disabledTuiAgents,
-      detectedAgentIds
-    )
-  }, [detectedAgentIds, disabledTuiAgents, localAgentCatalog])
 
   const handleAddRepo = React.useCallback((): void => {
     // Why: swapping activeModal would unmount the composer, so the override layers Add Project on top instead.
@@ -906,7 +875,7 @@ export default function NewWorkspaceComposerCard({
             </Tooltip>
           </div>
           <AgentCombobox
-            agents={visibleQuickAgents}
+            agents={quickAgentOptions}
             value={quickAgent}
             onValueChange={onQuickAgentChange}
             onOpenManageAgents={onOpenAgentSettings}

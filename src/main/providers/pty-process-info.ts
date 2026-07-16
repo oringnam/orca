@@ -13,4 +13,6 @@ export type PtyProcessInfo = {
   /** Exact WSL owner reported by the PTY provider; null means native Windows. */
   wslDistro?: string | null
   agentSessionOwners?: AgentSessionOwnerBinding[]
+  /** Host admission token surfaced on re-list for crash reconciliation. */
+  launchToken?: string
 }

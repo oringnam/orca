@@ -161,7 +161,6 @@ import type {
   Automation,
   AutomationCreateInput,
   AutomationRun,
-  AutomationRunStatus,
   AutomationUpdateInput,
   AutomationWorkspaceMode
 } from '../../shared/automations-types'
@@ -988,7 +987,10 @@ import {
 } from '../agent-launch/agent-launch-worktree-forget'
 import { reconcileAllPendingAgentLaunches } from '../agent-launch/agent-launch-worktree-reconcile-writer'
 import type { ReconcileScopePersistence } from '../agent-launch/agent-launch-worktree-reconcile-writer'
-import { buildReconcileAgentLaunchDeps } from '../agent-launch/agent-launch-reconcile-runtime-deps'
+import {
+  buildReconcileAgentLaunchDeps,
+  hostAuthorityFromRelistedConnections
+} from '../agent-launch/agent-launch-reconcile-runtime-deps'
 import type { ReconcileIntentRouterArms } from '../agent-launch/agent-launch-reconcile-intent-router'
 import { getHostBackgroundAgentLaunchStore } from '../agent-launch/background-agent-launch-store-host'
 import type { AgentLaunchExecutionHostId } from '../../shared/agent-launch-host-contract'
@@ -26452,7 +26454,16 @@ export class OrcaRuntimeService {
         notify()
       },
       markUnknown: (failure) => {
-        store.setWorktreeMeta(worktreeId, { agentLaunchFailure: failure })
+        // Contract: keep an existing launch_state_unknown failureId stable
+        // across idempotent re-runs so the client's expectedFailureId guard
+        // does not churn (ReconcileScopePersistence).
+        const existing = store.getWorktreeMeta(worktreeId)?.agentLaunchFailure
+        store.setWorktreeMeta(worktreeId, {
+          agentLaunchFailure:
+            existing?.code === 'launch_state_unknown'
+              ? { ...failure, failureId: existing.failureId }
+              : failure
+        })
         notify()
       }
     }
@@ -26493,11 +26504,11 @@ export class OrcaRuntimeService {
    *  changes); settleFailed is the hard dispatch_failed transition. */
   private automationReconcilePersistence(runId: string): ReconcileScopePersistence {
     const store = this.requireStore()
-    const currentStatus = (): AutomationRunStatus | undefined =>
-      store.listAutomationRuns().find((run) => run.id === runId)?.status
+    const currentRun = (): AutomationRun | undefined =>
+      store.listAutomationRuns().find((run) => run.id === runId)
     return {
       settleLaunched: () => {
-        const status = currentStatus()
+        const status = currentRun()?.status
         if (status) {
           store.updateAutomationRun({ runId, status, agentLaunchFailure: null })
         }
@@ -26511,9 +26522,19 @@ export class OrcaRuntimeService {
         })
       },
       markUnknown: (failure) => {
-        const status = currentStatus()
-        if (status) {
-          store.updateAutomationRun({ runId, status, agentLaunchFailure: failure })
+        const run = currentRun()
+        if (run) {
+          // Contract: keep an existing launch_state_unknown failureId stable
+          // across idempotent re-runs (ReconcileScopePersistence).
+          const existing = run.agentLaunchFailure
+          store.updateAutomationRun({
+            runId,
+            status: run.status,
+            agentLaunchFailure:
+              existing?.code === 'launch_state_unknown'
+                ? { ...failure, failureId: existing.failureId }
+                : failure
+          })
         }
       }
     }
@@ -31609,6 +31630,7 @@ export class OrcaRuntimeService {
         | 'isWsl'
         | 'wslDistro'
         | 'incarnationId'
+        | 'launchToken'
       >
     > = {}
   ): RuntimePtyWorktreeRecord {
@@ -31636,7 +31658,10 @@ export class OrcaRuntimeService {
         tabId: state.tabId ?? null,
         paneKey: state.paneKey ?? null,
         launchConfig: null,
-        launchToken: null,
+        // Why: an adopted provider-surviving terminal carries the token the
+        // provider persisted at spawn; without it crash reconciliation could
+        // never rejoin the launch and would falsely settle it absent.
+        launchToken: state.launchToken ?? null,
         launchAgent: null,
         launchNotices: null,
         foregroundAgent: null,
@@ -31706,6 +31731,11 @@ export class OrcaRuntimeService {
       } else {
         this.wslDistroByPtyId.delete(ptyId)
       }
+    }
+    // Why: adopt the provider-persisted token only when the record has none —
+    // never clobber the token a spawn path already bound to this PTY.
+    if (state.launchToken != null && pty.launchToken === null) {
+      pty.launchToken = state.launchToken
     }
     if (state.tabId !== undefined) {
       pty.tabId = state.tabId
@@ -31786,11 +31816,12 @@ export class OrcaRuntimeService {
       }
     }
     if (!this.ptyController?.listProcesses) {
-      // No controller: local terminals are purely in-process and died with main,
-      // so a non-live local pending launch is authoritatively absent. Full-refresh
-      // only — a scoped refresh does not re-list every host.
+      // No controller: local and WSL terminals are purely in-process and died
+      // with main, so a non-live local/WSL pending launch is authoritatively
+      // absent; remotes stay unknown (empty re-listed set). Full-refresh only —
+      // a scoped refresh does not re-list every host.
       if (targetWorktreeId === null) {
-        this.reconcilePendingAgentLaunches((hostId) => hostId === 'local')
+        this.reconcilePendingAgentLaunches(hostAuthorityFromRelistedConnections(new Set()))
       }
       return null
     }
@@ -31879,10 +31910,16 @@ export class OrcaRuntimeService {
     }
     const allLivePtyIds = new Set(sessions.map((session) => session.id))
     const selectedLivePtyIds = new Set<string>()
+    // SSH relay connections that evidenced a live re-list in this pass, so the
+    // reconcile below can speak authoritatively for their execution hosts.
+    const relistedConnectionIds = new Set<string>()
     for (const session of sessions) {
       const sessionConnectionId =
         parseAppSshPtyId(session.id)?.connectionId ??
         (typeof connectionId === 'string' ? connectionId : null)
+      if (sessionConnectionId) {
+        relistedConnectionIds.add(sessionConnectionId)
+      }
       const persistedIndexes = getPersistedIndexes(
         sessionConnectionId ? toSshExecutionHostId(sessionConnectionId) : LOCAL_EXECUTION_HOST_ID
       )
@@ -31949,7 +31986,8 @@ export class OrcaRuntimeService {
             : {}),
           ...(restoresExactSurface
             ? { tabId: persistedSurface.tabId, paneKey: persistedSurface.paneKey }
-            : {})
+            : {}),
+          ...(session.launchToken ? { launchToken: session.launchToken } : {})
         })
         if (restoresExactSurface && controllerIdentity) {
           this.rememberRestoredOrchestrationAuthority(
@@ -32001,14 +32039,15 @@ export class OrcaRuntimeService {
     }
     this.pruneDisconnectedPtyRecords()
     if (targetWorktreeId === null) {
+      const relistedAuthority = hostAuthorityFromRelistedConnections(relistedConnectionIds)
       this.reconcilePendingAgentLaunches((hostId) => {
         if (connectionId === undefined) {
-          return hostId === 'local' || hostId.startsWith('wsl:')
+          return relistedAuthority(hostId)
         }
         if (connectionId === null) {
           return hostId === 'local' || hostId.startsWith('wsl:')
         }
-        return hostId === toSshExecutionHostId(connectionId)
+        return hostId !== 'local' && !hostId.startsWith('wsl:') && relistedAuthority(hostId)
       })
     }
     return {

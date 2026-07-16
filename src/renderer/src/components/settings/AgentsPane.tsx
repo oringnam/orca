@@ -92,9 +92,12 @@ export function AgentsPane({
   }
 
   return (
-    <fieldset disabled={isReadOnly} className="m-0 min-w-0 space-y-8 border-0 p-0">
+    <div className="min-w-0 space-y-8">
       {isReadOnly && <AgentsPaneReadOnlyNotice />}
 
+      {/* Why: the catalog stays outside the disabled fieldset so its search box
+          remains usable in read-only mode; the section scopes disabling to its
+          own editable controls (default picker, rows, header actions). */}
       <AgentCatalogSection
         agentCmdOverrides={settings.agentCmdOverrides}
         codexSessionSourceHome={buildCodexSessionSourceHomeControl(settings, applyUpdate)}
@@ -142,27 +145,29 @@ export function AgentsPane({
         </div>
       ) : null}
 
-      <AgentRuntimeSetting
-        settings={settings}
-        updateSettings={applyUpdate}
-        refresh={refreshLocalAgents}
-        wslSupportedPlatform={wslSupportedPlatform}
-        wslAvailable={wslAvailable}
-        wslDistros={wslDistros}
-        wslCapabilitiesLoading={wslCapabilitiesLoading}
-      />
+      <fieldset disabled={isReadOnly} className="m-0 min-w-0 space-y-8 border-0 p-0">
+        <AgentRuntimeSetting
+          settings={settings}
+          updateSettings={applyUpdate}
+          refresh={refreshLocalAgents}
+          wslSupportedPlatform={wslSupportedPlatform}
+          wslAvailable={wslAvailable}
+          wslDistros={wslDistros}
+          wslCapabilitiesLoading={wslCapabilitiesLoading}
+        />
 
-      <AgentStatusHooksSetting settings={settings} updateSettings={applyUpdate} />
+        <AgentStatusHooksSetting settings={settings} updateSettings={applyUpdate} />
 
-      <AgentGeneratedTabTitlesSetting settings={settings} updateSettings={applyUpdate} />
+        <AgentGeneratedTabTitlesSetting settings={settings} updateSettings={applyUpdate} />
 
-      {!isPairedWebClientWindow() ? (
-        <AgentAwakeSetting settings={settings} updateSettings={applyUpdate} />
-      ) : null}
+        {!isPairedWebClientWindow() ? (
+          <AgentAwakeSetting settings={settings} updateSettings={applyUpdate} />
+        ) : null}
 
-      <AgentCacheTimerSection settings={settings} updateSettings={applyUpdate} />
+        <AgentCacheTimerSection settings={settings} updateSettings={applyUpdate} />
 
-      <AgentPermissionsSetting mode={agentPermissionMode} onChange={saveAgentPermissionMode} />
-    </fieldset>
+        <AgentPermissionsSetting mode={agentPermissionMode} onChange={saveAgentPermissionMode} />
+      </fieldset>
+    </div>
   )
 }

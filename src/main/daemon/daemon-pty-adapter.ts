@@ -1448,7 +1448,8 @@ export class DaemonPtyAdapter implements IPtyProvider {
             ...(worktreeId ? { worktreeId } : {}),
             ...(session.terminalHandle ? { terminalHandle: session.terminalHandle } : {}),
             ...(session.wslDistro !== undefined ? { wslDistro: session.wslDistro } : {}),
-            ...this.validatedAgentSessionOwners(session.agentSessionOwners)
+            ...this.validatedAgentSessionOwners(session.agentSessionOwners),
+            ...(session.launchToken ? { launchToken: session.launchToken } : {})
           })
         )
       }

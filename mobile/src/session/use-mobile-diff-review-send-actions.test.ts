@@ -207,4 +207,41 @@ describe('useMobileDiffReviewSendActions', () => {
     expect((error as Error).message).toBe('pane gone')
     expect(saveCommentsAndReviewState).not.toHaveBeenCalled()
   })
+
+  it('reports the typed failure code when terminal creation rejects the agent launch', async () => {
+    const sendRequest = vi.fn().mockResolvedValue({
+      id: 'create',
+      ok: true,
+      result: {
+        agentLaunch: { status: 'failed', failure: { code: 'launch_capacity_exceeded' } }
+      },
+      _meta: { runtimeId: 'runtime' }
+    })
+    await mount({ sendRequest } as unknown as RpcClient)
+
+    let error: unknown
+    await act(async () => {
+      error = await actions?.createTerminalAndSend([]).catch((err) => err)
+    })
+
+    expect((error as Error).message).toBe("Couldn't start the agent (launch_capacity_exceeded).")
+    expect(sendRequest).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports a malformed created-terminal response generically', async () => {
+    const sendRequest = vi.fn().mockResolvedValue({
+      id: 'create',
+      ok: true,
+      result: { tab: { type: 'terminal' } },
+      _meta: { runtimeId: 'runtime' }
+    })
+    await mount({ sendRequest } as unknown as RpcClient)
+
+    let error: unknown
+    await act(async () => {
+      error = await actions?.createTerminalAndSend([]).catch((err) => err)
+    })
+
+    expect((error as Error).message).toBe('Created terminal response was invalid')
+  })
 })

@@ -9722,7 +9722,8 @@
           "autoHint": "自動モードはカスタムエージェントを選択しません。",
           "staleWarning": "このデフォルトは利用できません。別のエージェントを選択するまで、対話的な起動は標準のベースエージェントコマンドを使用します。",
           "unsetPlaceholder": "デフォルトエージェントを選択",
-          "listLabel": "デフォルトエージェントの選択肢"
+          "listLabel": "デフォルトエージェントの選択肢",
+          "repairFallbackLabel": "カスタムエージェント"
         },
         "BuiltInLaunchSettingsDialog": {
           "reset": "リセット",
@@ -10837,7 +10838,8 @@
             "c075d00de1": "ワークスペースの接続を解決できません。",
             "808cfe0a3b": "このリポジトリのみに保存",
             "994cddd1f7": "保存しないでください",
-            "38b899cc02": "すべてのリポジトリ"
+            "38b899cc02": "すべてのリポジトリ",
+            "saveBeforeStartFailed": "エージェント設定を保存できなかったため、エージェントは起動されませんでした。"
           },
           "SourceControlAgentActionDialogForm": {
             "1bc0bdbb5e": "起動：",

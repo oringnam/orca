@@ -51,6 +51,7 @@ export class PtyProcessListAdmission {
     const titleBytes = retainedStringBytes(value.title)
     const worktreeIdBytes = retainedOptionalStringBytes(value.worktreeId)
     const terminalHandleBytes = retainedOptionalStringBytes(value.terminalHandle)
+    const launchTokenBytes = retainedOptionalStringBytes(value.launchToken)
     const wslDistroBytes =
       value.wslDistro === null ? 0 : retainedOptionalStringBytes(value.wslDistro)
     if (
@@ -59,6 +60,7 @@ export class PtyProcessListAdmission {
       titleBytes === null ||
       worktreeIdBytes === null ||
       terminalHandleBytes === null ||
+      launchTokenBytes === null ||
       wslDistroBytes === null ||
       (value.incarnationId !== undefined && !isPtyIncarnationId(value.incarnationId)) ||
       (value.agentSessionOwners !== undefined && !Array.isArray(value.agentSessionOwners))
@@ -90,6 +92,7 @@ export class PtyProcessListAdmission {
       titleBytes +
       worktreeIdBytes +
       terminalHandleBytes +
+      launchTokenBytes +
       wslDistroBytes +
       ownerBytes
     if (
@@ -111,6 +114,7 @@ export class PtyProcessListAdmission {
       ...(value.worktreeId !== undefined ? { worktreeId: value.worktreeId } : {}),
       ...(value.terminalHandle !== undefined ? { terminalHandle: value.terminalHandle } : {}),
       ...(value.wslDistro !== undefined ? { wslDistro: value.wslDistro } : {}),
+      ...(value.launchToken !== undefined ? { launchToken: value.launchToken } : {}),
       ...(normalizedOwners !== undefined ? { agentSessionOwners: normalizedOwners } : {})
     }
   }

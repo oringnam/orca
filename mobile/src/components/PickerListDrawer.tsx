@@ -9,6 +9,8 @@ import { BOTTOM_DRAWER_HIDE_DURATION_MS } from './bottom-drawer-constants'
 type Props<T extends { id: string; label: string }> = {
   visible: boolean
   title: string
+  /** Muted line under the title for host-state context (e.g. read-only catalog). */
+  subtitle?: string
   items: T[]
   selectedId: string
   onSelect: (item: T) => void
@@ -19,6 +21,7 @@ type Props<T extends { id: string; label: string }> = {
 export function PickerListDrawer<T extends { id: string; label: string }>({
   visible,
   title,
+  subtitle,
   items,
   selectedId,
   onSelect,
@@ -70,6 +73,7 @@ export function PickerListDrawer<T extends { id: string; label: string }>({
     >
       <View style={styles.header}>
         <Text style={styles.title}>{title}</Text>
+        {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
       </View>
       <FlatList
         data={items}
@@ -115,6 +119,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
     color: colors.textMuted
+  },
+  subtitle: {
+    fontSize: 12,
+    color: colors.textMuted,
+    marginTop: spacing.xs
   },
   group: {
     backgroundColor: colors.bgPanel,

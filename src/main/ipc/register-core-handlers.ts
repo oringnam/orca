@@ -40,6 +40,7 @@ import {
 import { registerSessionHandlers } from './session'
 import { registerSettingsHandlers } from './settings'
 import { registerAgentCatalogHandlers } from './agent-catalog'
+import { registerDataRecoveryHandlers } from './data-recovery'
 import { registerDiagnosticsHandlers } from './diagnostics'
 import { registerSkillsHandlers } from './skills'
 import { registerWorkspaceSpaceHandlers } from './workspace-space'
@@ -179,6 +180,7 @@ export function registerCoreHandlers(
   registerComputerUsePermissionHandlers()
   registerSettingsHandlers(store, agentAwakeService)
   registerAgentCatalogHandlers(store)
+  registerDataRecoveryHandlers(store)
   registerSkillsHandlers(store)
   if (automations) {
     registerAutomationHandlers(store, automations)

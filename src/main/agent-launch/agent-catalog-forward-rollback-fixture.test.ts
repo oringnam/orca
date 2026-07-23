@@ -12,10 +12,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { CustomTuiAgentId, GlobalSettings } from '../../shared/types'
 import {
   AGENT_CATALOG_SCHEMA_VERSION,
-  createPinnedPreV1Backup,
-  migrateAgentCatalogSchema,
-  pinnedPreV1BackupPath
-} from './agent-catalog-schema-migration'
+  migrateAgentCatalogSchema
+} from '../../shared/agent-catalog-schema-migration'
+import { createPinnedPreV1Backup, pinnedPreV1BackupPath } from './agent-catalog-pre-v1-backup'
 import { resolveAgentLaunch } from './resolve-agent-launch'
 import {
   catalogOf,

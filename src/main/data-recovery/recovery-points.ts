@@ -13,7 +13,7 @@ import {
   unlinkSync,
   writeSync
 } from 'node:fs'
-import { pinnedPreV1BackupPath } from '../agent-launch/agent-catalog-schema-migration'
+import { pinnedPreV1BackupPath } from '../agent-launch/agent-catalog-pre-v1-backup'
 import type { RecoveryPointDto, RecoveryPointId } from '../../shared/data-recovery'
 
 export type { RecoveryPointDto, RecoveryPointId } from '../../shared/data-recovery'

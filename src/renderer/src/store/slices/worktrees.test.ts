@@ -8735,6 +8735,116 @@ describe('fetchAllWorktrees hydration-time purge (design §4.4)', () => {
     })
   })
 
+  // Why (incident 2026-07-19): remote-only repo hydration passed every purge gate and condemned all local owners; unknown-owner keys must be deferred, not deleted.
+  it('never condemns owners whose repo is missing from hydrated repos (remote-only hydration)', async () => {
+    const store = createTestStore()
+    const sshRepo = {
+      id: 'sshRepo',
+      path: '/remote/repo',
+      displayName: 'remote',
+      badgeColor: '#222',
+      addedAt: 0,
+      connectionId: 'ssh-1'
+    }
+    const sshWt = makeWorktree({ id: 'sshRepo::/s/wt1', repoId: 'sshRepo', path: '/s/wt1' })
+
+    mockApi.worktrees.list.mockResolvedValue([sshWt])
+
+    store.setState({
+      repos: [sshRepo],
+      tabsByWorktree: {
+        // Persisted local owners whose repo did not hydrate this launch.
+        'localRepo::/l/wt1': [{ id: 'tab-L1', worktreeId: 'localRepo::/l/wt1' }],
+        'localRepo::/l/wt2': [{ id: 'tab-L2', worktreeId: 'localRepo::/l/wt2' }],
+        'sshRepo::/s/wt1': [{ id: 'tab-S', worktreeId: 'sshRepo::/s/wt1' }],
+        // A genuinely stale key on the covered SSH host still gets reaped.
+        'sshRepo::/s/stale': [{ id: 'tab-S-stale', worktreeId: 'sshRepo::/s/stale' }]
+      }
+    } as unknown as Partial<AppState>)
+
+    await store.getState().fetchAllWorktrees()
+
+    expect(store.getState().tabsByWorktree).toEqual({
+      'localRepo::/l/wt1': [{ id: 'tab-L1', worktreeId: 'localRepo::/l/wt1' }],
+      'localRepo::/l/wt2': [{ id: 'tab-L2', worktreeId: 'localRepo::/l/wt2' }],
+      'sshRepo::/s/wt1': [{ id: 'tab-S', worktreeId: 'sshRepo::/s/wt1' }]
+    })
+    // The one-shot stays unconsumed so a later, fully hydrated cycle can finish the reap.
+    expect(store.getState().hasHydratedWorktreePurge).toBe(false)
+  })
+
+  it('defers local owners when local repos hydrate authoritative-empty while a remote host has worktrees', async () => {
+    const store = createTestStore()
+    const sshRepo = {
+      id: 'sshRepo',
+      path: '/remote/repo',
+      displayName: 'remote',
+      badgeColor: '#222',
+      addedAt: 0,
+      connectionId: 'ssh-1'
+    }
+    const sshWt = makeWorktree({ id: 'sshRepo::/s/wt1', repoId: 'sshRepo', path: '/s/wt1' })
+
+    // Local repoA answers authoritative-empty; only the SSH host proves any worktrees.
+    mockApi.worktrees.list.mockImplementation(async ({ repoId }: { repoId: string }) =>
+      repoId === 'sshRepo' ? [sshWt] : []
+    )
+
+    store.setState({
+      repos: [repoA, sshRepo],
+      tabsByWorktree: {
+        'repoA::/a/wt1': [{ id: 'tab-A', worktreeId: 'repoA::/a/wt1' }],
+        'sshRepo::/s/wt1': [{ id: 'tab-S', worktreeId: 'sshRepo::/s/wt1' }]
+      }
+    } as unknown as Partial<AppState>)
+
+    await store.getState().fetchAllWorktrees()
+
+    expect(store.getState().tabsByWorktree).toEqual({
+      'repoA::/a/wt1': [{ id: 'tab-A', worktreeId: 'repoA::/a/wt1' }],
+      'sshRepo::/s/wt1': [{ id: 'tab-S', worktreeId: 'sshRepo::/s/wt1' }]
+    })
+    expect(store.getState().hasHydratedWorktreePurge).toBe(false)
+  })
+
+  it('reaps covered-host zombies while deferring unknown-owner keys, then completes once owners hydrate', async () => {
+    const store = createTestStore()
+    const wtA = makeWorktree({ id: 'repoA::/a/wt1', repoId: 'repoA', path: '/a/wt1' })
+    const wtB = makeWorktree({ id: 'repoB::/b/wt1', repoId: 'repoB', path: '/b/wt1' })
+
+    mockApi.worktrees.list.mockImplementation(async ({ repoId }: { repoId: string }) =>
+      repoId === 'repoA' ? [wtA] : [wtB]
+    )
+
+    store.setState({
+      repos: [repoA],
+      tabsByWorktree: {
+        'repoA::/a/wt1': [{ id: 'tab-A', worktreeId: 'repoA::/a/wt1' }],
+        'repoA::/a/zombie': [{ id: 'tab-zombie', worktreeId: 'repoA::/a/zombie' }],
+        'repoB::/b/wt1': [{ id: 'tab-B', worktreeId: 'repoB::/b/wt1' }]
+      }
+    } as unknown as Partial<AppState>)
+
+    await store.getState().fetchAllWorktrees()
+
+    // repoA is covered so its zombie is reaped; repoB has not hydrated so its owner is untouchable.
+    expect(store.getState().tabsByWorktree).toEqual({
+      'repoA::/a/wt1': [{ id: 'tab-A', worktreeId: 'repoA::/a/wt1' }],
+      'repoB::/b/wt1': [{ id: 'tab-B', worktreeId: 'repoB::/b/wt1' }]
+    })
+    expect(store.getState().hasHydratedWorktreePurge).toBe(false)
+
+    // Once repoB hydrates with an authoritative listing, the purge completes.
+    store.setState({ repos: [repoA, repoB] } as unknown as Partial<AppState>)
+    await store.getState().fetchAllWorktrees()
+
+    expect(store.getState().tabsByWorktree).toEqual({
+      'repoA::/a/wt1': [{ id: 'tab-A', worktreeId: 'repoA::/a/wt1' }],
+      'repoB::/b/wt1': [{ id: 'tab-B', worktreeId: 'repoB::/b/wt1' }]
+    })
+    expect(store.getState().hasHydratedWorktreePurge).toBe(true)
+  })
+
   // Why: multi-host regression — after hydration a mid-session fetch must never purge, even if a host reports zero worktrees.
   it('does not purge another host tab state when hasHydratedWorktreePurge is already true and a host reports zero worktrees', async () => {
     const store = createTestStore()

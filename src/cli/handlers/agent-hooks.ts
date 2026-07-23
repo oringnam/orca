@@ -17,7 +17,7 @@ import {
   applyAgentStatusHooksEnabled,
   getManagedAgentHookStatuses
 } from '../../main/agent-hooks/managed-agent-hook-controls'
-import { AGENT_CATALOG_SCHEMA_VERSION } from '../../main/agent-launch/agent-catalog-schema-migration'
+import { AGENT_CATALOG_SCHEMA_VERSION } from '../../shared/agent-catalog-schema-migration'
 
 // Why: offline writes must be schema-transparent for the agent catalog — merging
 // defaults would stamp agentCatalogSchemaVersion on a pre-v1 file without the

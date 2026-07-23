@@ -42,6 +42,7 @@ import {
   dropWorktreeRowsForRemovedRuntimeEnvironments,
   isRemovedRuntimeHostId
 } from './stale-runtime-host-rows'
+import { recordRendererCrashBreadcrumb } from '@/lib/crash-breadcrumb-recorder'
 import { ensureHooksConfirmed } from '@/lib/ensure-hooks-confirmed'
 import { cleanupEphemeralVmRuntimesForDeleted } from '@/lib/ephemeral-vm-runtime-cleanup'
 import { tabHasLivePty } from '@/lib/tab-has-live-pty'
@@ -242,6 +243,23 @@ async function mapReposForWorktreeRefresh<TRepo extends { id: string }, TResult>
   return results
 }
 
+// Why: the deferring state persists across refresh cycles; dedupe by signature so the trace log gets the timeline transition, not one crumb per fetchAllWorktrees.
+let lastHydrationPurgeDeferralSignature: string | null = null
+function recordHydrationPurgeDeferralBreadcrumb(data: {
+  deferredUnknownOwner: number
+  deferredUncoveredHost: number
+  removed: number
+  repoCount: number
+  localRepoCount: number
+  coveredHosts: string
+}): void {
+  const signature = JSON.stringify(data)
+  if (signature === lastHydrationPurgeDeferralSignature) {
+    return
+  }
+  lastHydrationPurgeDeferralSignature = signature
+  recordRendererCrashBreadcrumb('worktree_purge.hydration_deferred', data)
+}
 function shouldDeferActivationTerminalPrep(): boolean {
   return typeof window !== 'undefined' && import.meta.env.MODE !== 'test'
 }
@@ -3613,13 +3631,72 @@ export const createWorktreeSlice: StateCreator<AppState, [], [], WorktreeSlice> 
         validIds.add(w.id)
       }
     }
-    const stale = Object.keys(get().tabsByWorktree).filter((id) => !validIds.has(id))
+    // Why (incident 2026-07-19): a remote-only repo hydration passed every gate and condemned all 15 local owners. An owner repo missing from hydrated repos, or a host with zero authoritative non-empty detections, means hydration is incomplete — not deletion — so those keys are deferred, never condemned.
+    const repoHostById = new Map<string, ExecutionHostId>(
+      get().repos.map((r) => [r.id, getRepoExecutionHostId(r)])
+    )
+    const coveredHostIds = new Set<ExecutionHostId>()
+    for (const repo of get().repos) {
+      const detected = get().detectedWorktreesByRepo[repo.id]
+      if (detected?.authoritative && detected.worktrees.length > 0) {
+        coveredHostIds.add(getRepoExecutionHostId(repo))
+      }
+    }
+    const deferredUnknownOwner: string[] = []
+    const deferredUncoveredHost: string[] = []
+    const stale: string[] = []
+    let staleLocalOwners = 0
+    for (const id of Object.keys(get().tabsByWorktree)) {
+      if (validIds.has(id)) {
+        continue
+      }
+      const ownerHostId = repoHostById.get(getRepoIdFromWorktreeId(id))
+      if (ownerHostId === undefined) {
+        deferredUnknownOwner.push(id)
+      } else if (!coveredHostIds.has(ownerHostId)) {
+        deferredUncoveredHost.push(id)
+      } else {
+        if (ownerHostId === LOCAL_EXECUTION_HOST_ID) {
+          staleLocalOwners += 1
+        }
+        stale.push(id)
+      }
+    }
+    const localRepoCount = [...repoHostById.values()].filter(
+      (hostId) => hostId === LOCAL_EXECUTION_HOST_ID
+    ).length
     if (stale.length > 0) {
       console.warn(
         `[worktree-purge] hydration-time purge removing stale state for ${stale.length} worktree(s):`,
         stale
       )
+      recordRendererCrashBreadcrumb('worktree_purge.hydration', {
+        removed: stale.length,
+        removedLocalOwners: staleLocalOwners,
+        removedRemoteOwners: stale.length - staleLocalOwners,
+        deferredUnknownOwner: deferredUnknownOwner.length,
+        deferredUncoveredHost: deferredUncoveredHost.length,
+        repoCount: repoHostById.size,
+        localRepoCount,
+        coveredHosts: [...coveredHostIds].join(',')
+      })
       get().purgeWorktreeTerminalState(stale)
+    }
+    if (deferredUnknownOwner.length > 0 || deferredUncoveredHost.length > 0) {
+      console.warn(
+        `[worktree-purge] deferring hydration purge for ${deferredUnknownOwner.length} unknown-owner and ${deferredUncoveredHost.length} uncovered-host worktree(s); repo hydration looks incomplete`
+      )
+      recordHydrationPurgeDeferralBreadcrumb({
+        deferredUnknownOwner: deferredUnknownOwner.length,
+        deferredUncoveredHost: deferredUncoveredHost.length,
+        removed: stale.length,
+        repoCount: repoHostById.size,
+        // Why: localRepoCount 0 with unknown-owner deferrals is the silent upstream anomaly — persistence holds local owners while hydration produced no local repos.
+        localRepoCount,
+        coveredHosts: [...coveredHostIds].join(',')
+      })
+      // Why: leave the one-shot unconsumed so a later, fully hydrated cycle can still reap genuinely stale keys.
+      return
     }
     set({ hasHydratedWorktreePurge: true })
   },

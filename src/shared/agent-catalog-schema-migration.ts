@@ -4,61 +4,17 @@
 // existing profile, a pinned same-permission pre-v1 backup is created beside
 // the rotating backups; if that backup cannot be created, no v1 write happens
 // and launch behavior stays on the clean built-in baseline.
+//
+// Why shared: the CLI's offline settings writes need AGENT_CATALOG_SCHEMA_VERSION
+// for their schema-newer-than-this-CLI guard, and out/main does not survive
+// electron-vite rebuilds. The fs-bound backup writer this migration injects
+// lives in src/main/agent-launch/agent-catalog-pre-v1-backup.ts.
 
-import {
-  closeSync,
-  existsSync,
-  fsyncSync,
-  openSync,
-  renameSync,
-  statSync,
-  unlinkSync,
-  writeSync
-} from 'node:fs'
-import type { GlobalSettings } from '../../shared/types'
+import type { GlobalSettings } from './types'
 
 export const AGENT_CATALOG_SCHEMA_VERSION = 1
 
-export function pinnedPreV1BackupPath(dataFile: string): string {
-  return `${dataFile}.pre-agent-catalog-v1.backup`
-}
-
 export type PinnedBackupResult = { ok: true; created: boolean } | { ok: false; error: string }
-
-/** Write the exact pre-v1 raw bytes to the pinned backup with the data file's
- *  permissions, fsync, then atomically rename into place. An existing pinned
- *  backup is kept (a crash between backup and first v1 write must not let a
- *  second attempt overwrite the original pre-v1 state). */
-export function createPinnedPreV1Backup(dataFile: string, rawContents: string): PinnedBackupResult {
-  const backupFile = pinnedPreV1BackupPath(dataFile)
-  try {
-    if (existsSync(backupFile)) {
-      return { ok: true, created: false }
-    }
-    const mode = statSync(dataFile).mode & 0o777
-    const tmpFile = `${backupFile}.tmp`
-    const fd = openSync(tmpFile, 'w', mode)
-    try {
-      writeSync(fd, rawContents)
-      fsyncSync(fd)
-    } finally {
-      closeSync(fd)
-    }
-    try {
-      renameSync(tmpFile, backupFile)
-    } catch (error) {
-      try {
-        unlinkSync(tmpFile)
-      } catch {
-        // Best-effort tmp cleanup; the rename failure is the reported error.
-      }
-      throw error
-    }
-    return { ok: true, created: true }
-  } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) }
-  }
-}
 
 export type AgentCatalogSchemaMigrationOutcome = {
   /** Patch merged into loaded settings; empty object when nothing changed. */

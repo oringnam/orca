@@ -1,7 +1,7 @@
 import { ONBOARDING_FINAL_STEP, ONBOARDING_FLOW_VERSION } from '../../../src/shared/constants'
 import { FEATURE_INTERACTION_IDS } from '../../../src/shared/feature-interactions'
 import { FEATURE_TIP_IDS } from '../../../src/shared/feature-tips'
-import { AGENT_CATALOG_SCHEMA_VERSION } from '../../../src/main/agent-launch/agent-catalog-schema-migration'
+import { AGENT_CATALOG_SCHEMA_VERSION } from '../../../src/shared/agent-catalog-schema-migration'
 import type { CustomTuiAgent } from '../../../src/shared/types'
 import type { SourceControlActionRecipe } from '../../../src/shared/source-control-ai-actions'
 

@@ -151,12 +151,13 @@ export function resolveResumeLaunchIngest(
       }
       // Persist-once: the host owns the config thereafter, so a later resume works
       // without the renderer re-sending it (the client field is deleted next
-      // release). Validation ran first, so this write is only ever a valid config.
+      // release). Persist the replay's cleaned durable config (trimmed, env
+      // stripped of attribution/teams keys), never the raw client handoff.
       store.ingestLegacyRecord({
         ownershipKey: input.resume.sessionKey,
         requestedAgent: baseAgent,
         providerSession,
-        legacyLaunchConfig: input.legacy.handoff.launchConfig,
+        legacyLaunchConfig: replay.launchConfig,
         connectionId: input.legacy.handoff.recordedConnectionId
       })
       return { ok: true, kind: 'legacy', intent, ...replayFields(replay) }

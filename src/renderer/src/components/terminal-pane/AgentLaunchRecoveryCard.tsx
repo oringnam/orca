@@ -45,11 +45,14 @@ export function AgentLaunchRecoveryCard({
   failure,
   liveness,
   busy = false,
+  disabledActionIds,
   onAction
 }: {
   failure: PersistedAgentLaunchFailure
   liveness: AgentLaunchRecoveryLiveness
   busy?: boolean
+  /** Actions the container knows would no-op (e.g. Forget with no pending op). */
+  disabledActionIds?: ReadonlySet<AgentLaunchRecoveryActionId>
   onAction: (id: AgentLaunchRecoveryActionId) => void
 }): React.JSX.Element {
   const model = resolveAgentLaunchRecoveryCard(failure, { liveness })
@@ -80,7 +83,7 @@ export function AgentLaunchRecoveryCard({
         <RecoveryActionButton
           id={model.primary}
           variant="default"
-          disabled={busy}
+          disabled={busy || disabledActionIds?.has(model.primary) === true}
           onAction={onAction}
         />
         {model.secondary.map((id) => (
@@ -88,7 +91,7 @@ export function AgentLaunchRecoveryCard({
             key={id}
             id={id}
             variant="outline"
-            disabled={busy}
+            disabled={busy || disabledActionIds?.has(id) === true}
             onAction={onAction}
           />
         ))}

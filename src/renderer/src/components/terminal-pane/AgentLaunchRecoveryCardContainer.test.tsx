@@ -152,9 +152,10 @@ describe('AgentLaunchRecoveryCardContainer', () => {
     expect(mocks.forgetWorktreeAgentLaunch).not.toHaveBeenCalled()
   })
 
-  it('does not confirm or forget when no pending operation id survives reconciliation', async () => {
+  it('disables Forget (and never confirms or forgets) when no pending operation id survives reconciliation', async () => {
     worktreeBox.worktree = { agentLaunchFailure: failure('launch_state_unknown') }
     await render()
+    expect(buttonByLabel('Forget launch…').disabled).toBe(true)
     await act(async () => {
       buttonByLabel('Forget launch…').click()
     })

@@ -192,8 +192,9 @@ test.describe('SSH custom-agent launch', () => {
         .toBe(1)
 
       // Kill and re-establish the relay. Recovery must never guess liveness or
-      // identity into a SECOND launch: the settled state carries at most one
-      // remote agent process and one PTY identity, never a duplicate.
+      // identity into a SECOND launch, and reattach must preserve the live
+      // remote process: exactly one agent survives — no duplicate, no respawn,
+      // and no kill of the original.
       await reconnectDockerTarget(orcaPage, remote.targetId)
       await ensureTerminalVisible(orcaPage, 45_000)
       await waitForActiveTerminalManager(orcaPage, 60_000)
@@ -201,9 +202,10 @@ test.describe('SSH custom-agent launch', () => {
       await expect
         .poll(() => observeRemoteAgentProcesses(target!).length, {
           timeout: 30_000,
-          message: 'reconnect produced a duplicate remote custom-agent process'
+          message:
+            'reconnect must preserve exactly one remote custom-agent process (no duplicate, no kill)'
         })
-        .toBeLessThanOrEqual(1)
+        .toBe(1)
 
       testInfo.annotations.push({
         type: 'ssh-custom-agent-reconnect-settle',

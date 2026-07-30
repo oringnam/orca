@@ -118,6 +118,20 @@ describe('automation launch-failure round trip (G6)', () => {
     expect(parsePersistedAgentLaunchFailure(roundTripped)).toEqual(minted)
   })
 
+  it('drops extra keys a forged client failure tries to smuggle into the mint', () => {
+    const forged = {
+      code: 'spawn_failed',
+      agentEnv: { TOKEN: 'x' },
+      argv: ['--secret'],
+      label: 'evil'
+    } as unknown as Parameters<typeof mintPersistedAutomationLaunchFailure>[0]
+    const minted = mintPersistedAutomationLaunchFailure(forged)
+    for (const key of Object.keys(minted)) {
+      expect(ALLOWED_FAILURE_KEYS.has(key)).toBe(true)
+    }
+    expect('agentEnv' in minted).toBe(false)
+  })
+
   it('rejects a stored blob carrying secret env/argv text on read', () => {
     const minted = mintPersistedAutomationLaunchFailure({ code: 'spawn_failed' })
     expect(parsePersistedAgentLaunchFailure({ ...minted, agentEnv: { TOKEN: 'x' } })).toBeNull()

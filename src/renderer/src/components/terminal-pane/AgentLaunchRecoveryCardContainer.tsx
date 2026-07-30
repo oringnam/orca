@@ -14,6 +14,8 @@ import {
 import type { AgentLaunchRecoveryActionId } from '@/lib/agent-launch-recovery-card'
 import type { AgentLaunchRecoveryLiveness } from '@/lib/agent-launch-recovery-card'
 
+const FORGET_WITHOUT_PENDING: ReadonlySet<AgentLaunchRecoveryActionId> = new Set(['forget-launch'])
+
 /** Connected recovery card for a post-create agent-launch failure. Reads the
  *  durable failure from the workspace's WorktreeMeta mirror and renders nothing
  *  until the host records one. Retry/Forget are fully wired here; the host's
@@ -164,6 +166,9 @@ export function AgentLaunchRecoveryCardContainer({
       failure={failure}
       liveness={liveness}
       busy={busy}
+      // No pending op id → the host would reject the forget (anti-race guard);
+      // disable rather than offer a silent no-op button.
+      disabledActionIds={pendingOperationId ? undefined : FORGET_WITHOUT_PENDING}
       onAction={onAction}
     />
   )

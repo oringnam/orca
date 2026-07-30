@@ -34,12 +34,20 @@ export function stampAutomationDispatchLaunchFailure(
   }
 }
 
-/** Mint the host-authoritative persisted wrapper for the automation path. */
+/** Mint the host-authoritative persisted wrapper for the automation path.
+ *  Whitelists the wire schema's fields — never spreads the client value, so a
+ *  forged payload cannot smuggle extra keys into the persisted run. */
 export function mintPersistedAutomationLaunchFailure(
   failure: AgentLaunchFailure
 ): PersistedAgentLaunchFailure {
   return {
-    ...failure,
+    code: failure.code,
+    ...(failure.requestedAgent !== undefined ? { requestedAgent: failure.requestedAgent } : {}),
+    ...(failure.baseAgent !== undefined ? { baseAgent: failure.baseAgent } : {}),
+    ...(failure.variable !== undefined ? { variable: failure.variable } : {}),
+    ...(failure.field !== undefined ? { field: failure.field } : {}),
+    ...(failure.shell !== undefined ? { shell: failure.shell } : {}),
+    ...(failure.reason !== undefined ? { reason: failure.reason } : {}),
     version: 1,
     failureId: randomUUID(),
     intent: 'automation',

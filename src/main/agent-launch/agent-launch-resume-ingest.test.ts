@@ -161,7 +161,7 @@ describe('resolveResumeLaunchIngest — opaque legacy replay', () => {
     expect(second.ok && second.kind).toBe('legacy')
   })
 
-  it('strips Orca attribution env before replay', () => {
+  it('strips Orca attribution env before replay and persists the cleaned config', () => {
     const store = new AgentSessionRecordStore()
     const result = resolveResumeLaunchIngest(
       {
@@ -169,8 +169,8 @@ describe('resolveResumeLaunchIngest — opaque legacy replay', () => {
         client: 'desktop',
         legacy: desktopLegacy({
           launchConfig: {
-            agentCommand: 'claude',
-            agentArgs: '',
+            agentCommand: ' claude ',
+            agentArgs: '  ',
             agentEnv: { FOO: 'bar', ORCA_PANE_KEY: 'pane', TMUX: 'x' }
           },
           recordedConnectionId: null
@@ -180,6 +180,12 @@ describe('resolveResumeLaunchIngest — opaque legacy replay', () => {
     )
     expect(result.ok && result.kind === 'legacy' && result.launchConfig.agentEnv).toEqual({
       FOO: 'bar'
+    })
+    // The durable record holds the replay's cleaned config, never the raw handoff.
+    expect(store.resolveByOwnershipKey(KEY)?.legacyLaunchConfig).toEqual({
+      agentCommand: 'claude',
+      agentArgs: '',
+      agentEnv: { FOO: 'bar' }
     })
   })
 

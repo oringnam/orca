@@ -23,6 +23,7 @@ const result = spawnSync(
     'playwright',
     'test',
     'tests/e2e/ssh-custom-agent-launch.spec.ts',
+    'tests/e2e/ssh-custom-agent-surfaces.spec.ts',
     '--config',
     'tests/playwright.config.ts',
     '--project',

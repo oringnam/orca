@@ -19,6 +19,7 @@ import type { GitPushTarget, SetupDecision, TuiAgent } from '../../../shared/typ
 import { getLinearIssueWorkspaceName } from '../../../shared/workspace-name'
 import { resolveGitHubWorkItemIdentity } from '@/lib/github-work-item-identity'
 import { getDirectWorkItemDraftContent } from '@/lib/launch-work-item-direct-draft'
+import { seedNativeChatLaunchDraftForAgentTab } from '@/lib/agent-launch-prompt-delivery'
 import {
   resolveDirectPrStartPoint,
   resolveDirectSetupDecision
@@ -237,6 +238,16 @@ export async function launchWorkItemDirect(args: LaunchWorkItemDirectArgs): Prom
       // worth handling explicitly rather than silently opening nothing.
       toast.error(workspaceActivationErrorMessage())
       return false
+    }
+    if (activation.primaryTabId && requestedAgent && promptDelivery === 'draft') {
+      const draft = draftContent.trim()
+      if (draft) {
+        seedNativeChatLaunchDraftForAgentTab({
+          tabId: activation.primaryTabId,
+          agent: requestedAgent,
+          text: draftContent
+        })
+      }
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to create workspace.'

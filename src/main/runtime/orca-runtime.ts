@@ -1057,6 +1057,7 @@ export type CreateManagedWorktreeArgs = {
   observeSetupCompletion?: boolean
   createdWithAgent?: TuiAgent
   startupAgent?: TuiAgent
+  startupLaunchPreferences?: AgentLaunchPreferences
   startupPrompt?: string
   pendingFirstAgentMessageRename?: boolean
   automationProvenance?: AutomationWorkspaceProvenance

@@ -526,7 +526,7 @@ export class Coordinator {
         this.opts.onLog(
           `Dispatch of ${task.id} failed launch validation (${validation.launchFailure.code})`
         )
-        return
+        return 'dispatched'
       }
     }
 

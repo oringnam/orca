@@ -44,7 +44,7 @@ function getLaunchBinary(command: string): string {
 
 const PI_LAUNCH_BINARY = getLaunchBinary(TUI_AGENT_CONFIG.pi.launchArgv[0])
 const OMP_LAUNCH_BINARY = getLaunchBinary(TUI_AGENT_CONFIG.omp.launchArgv[0])
-const PRIME_AGENT_LAUNCH_BINARY = getLaunchBinary(TUI_AGENT_CONFIG['prime-agent'].launchCmd)
+const PRIME_AGENT_LAUNCH_BINARY = getLaunchBinary(TUI_AGENT_CONFIG['prime-agent'].launchArgv[0])
 
 export function detectExplicitPiAgentKindFromCommand(
   command: string | undefined

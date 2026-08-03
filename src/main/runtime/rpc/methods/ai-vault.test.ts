@@ -414,8 +414,8 @@ describe('aiVault resumeCommand/resumeDetails params schema', () => {
 describe('aiVault.resumeCommand handler', () => {
   beforeEach(() => {
     resetAiVaultSessionListCacheForTests()
-    scanAiVaultSessions.mockReset()
-    scanAiVaultSessions.mockResolvedValue({
+    scanAiVaultSessionsInWorker.mockReset()
+    scanAiVaultSessionsInWorker.mockResolvedValue({
       sessions: [makeSession()],
       issues: [],
       scannedAt: SCANNED_AT
@@ -478,8 +478,8 @@ describe('aiVault.resumeCommand handler', () => {
 describe('aiVault.resumeDetails handler', () => {
   beforeEach(() => {
     resetAiVaultSessionListCacheForTests()
-    scanAiVaultSessions.mockReset()
-    scanAiVaultSessions.mockResolvedValue({
+    scanAiVaultSessionsInWorker.mockReset()
+    scanAiVaultSessionsInWorker.mockResolvedValue({
       sessions: [
         {
           ...makeSession(),

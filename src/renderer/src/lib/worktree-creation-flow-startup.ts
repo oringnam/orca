@@ -29,7 +29,7 @@ export function buildWorktreeCreationStartupOpt(
     ...(plan.startupCommandDelivery ? { startupCommandDelivery: plan.startupCommandDelivery } : {}),
     // Why: command-code shows its prompt in the tab status before the first
     // hook fires, so the prompt is threaded through here.
-    ...(request.agent === 'command-code' && request.quickPrompt.trim().length > 0
+    ...(request.agent === 'command-code' && request.quickPrompt?.trim()
       ? { initialAgentStatus: { agent: request.agent, prompt: request.quickPrompt.trim() } }
       : {}),
     ...(request.quickTelemetry ? { telemetry: request.quickTelemetry } : {})

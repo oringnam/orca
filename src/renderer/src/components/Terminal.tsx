@@ -140,7 +140,6 @@ import {
 import { isMainTerminalSideEffectAuthorityForPty } from './terminal-pane/terminal-side-effect-facts-handler'
 import { appendUniqueOpenFileIds } from './terminal/unsaved-close-queue'
 import { setWindowCloseRequestHandler } from './window-close-request-coordinator'
-import CodexRestartChip from './CodexRestartChip'
 import { AgentLaunchNotices } from './terminal-pane/AgentLaunchNotices'
 import { AgentLaunchRecoveryCardContainer } from './terminal-pane/AgentLaunchRecoveryCardContainer'
 import {
@@ -2514,7 +2513,6 @@ function Terminal(): React.JSX.Element | null {
                     )}
                     {isVisible && <AgentLaunchRecoveryCardContainer worktreeId={workspace.id} />}
                     <div className="relative min-h-0 min-w-0 flex-1">
-                      <CodexRestartChip isVisible={isVisible} worktreeId={workspace.id} />
                       {(tabsByWorktree[workspace.id] ?? [])
                         .filter((tab) =>
                           shouldMountBackgroundWorktreeTab(

@@ -152,7 +152,7 @@ export const TUI_AGENT_CONFIG: Record<BuiltInTuiAgent, TuiAgentConfig> = {
   },
   'prime-agent': {
     detectCmd: 'prime-agent',
-    launchCmd: 'prime-agent',
+    launchArgv: ['prime-agent'],
     expectedProcess: 'prime-agent',
     // Why: `prime-agent [options] [@files...] [message...]` takes the task as positional argv.
     promptInjectionMode: 'argv',

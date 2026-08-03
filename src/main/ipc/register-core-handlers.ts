@@ -229,7 +229,6 @@ export function registerCoreHandlers(
       resolveRuntimeAiVaultSessionTitles(app.getPath('userData'), environmentId, args),
     prepareRuntimeSessionResume: async (environmentId, args) =>
       prepareRuntimeAiVaultSessionResume(app.getPath('userData'), environmentId, args),
-    getSessionLiveness: (target) => runtime.getAiVaultSessionLiveness(target),
     resolveRuntimeAiVaultResumeDetails: (environmentId, entry) =>
       resolveRuntimeAiVaultResumeDetails(app.getPath('userData'), environmentId, entry),
     // The store owns authoritative command, argument, environment, and Windows shell settings.

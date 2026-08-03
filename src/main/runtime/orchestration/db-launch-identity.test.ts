@@ -329,7 +329,7 @@ describe('OrchestrationDb U6 launch identity, structured failure, and forget', (
         (c) => c.name
       )
       raw2.close()
-      expect(version).toBe(22)
+      expect(version).toBe(27)
       expect(messageCols).toContain('sender_pane_key')
       // The pane column is writable on the migrated schema.
       const task = d.createTask({ spec: 'post-pre-rebase work' })

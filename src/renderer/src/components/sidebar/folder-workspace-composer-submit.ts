@@ -1,5 +1,6 @@
 import type { LinkedWorkItemSummary } from '@/lib/new-workspace'
 import { resolveQuickCreateLinkedWorkItemPrompt } from '@/lib/linked-work-item-context'
+import { seedNativeChatLaunchDraftForAgentTab } from '@/lib/agent-launch-prompt-delivery'
 import {
   activateAndRevealFolderWorkspace,
   type WorktreeStartupPayload
@@ -73,6 +74,7 @@ function buildFolderWorkspaceStartup(args: {
     command: '',
     launchAgent: agent,
     agentLaunch,
+    ...(linkedDraft ? { launchDraftText: linkedDraft } : {}),
     // Host overwrites agent_kind from the resolved receipt before the emit, so
     // this host-resolved launch threads only the surface-owned fields.
     telemetry: {
@@ -168,10 +170,17 @@ export async function submitFolderWorkspaceCreate({
     : undefined
   onOpenChange(false)
   try {
-    activateAndRevealFolderWorkspace(workspace.id, {
+    const activation = activateAndRevealFolderWorkspace(workspace.id, {
       ...(startup ? { startup } : {}),
       runtimeEnvironmentId
     })
+    if (activation && activation.primaryTabId && startup?.launchDraftText && quickAgent) {
+      seedNativeChatLaunchDraftForAgentTab({
+        tabId: activation.primaryTabId,
+        agent: quickAgent,
+        text: startup.launchDraftText
+      })
+    }
   } catch (error) {
     // Why: creation already succeeded. Do not leave the completed create modal
     // open if the follow-up reveal/startup path hits a transient issue.

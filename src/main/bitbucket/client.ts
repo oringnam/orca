@@ -14,22 +14,15 @@ import {
   type HostedReviewExecutionOptions
 } from '../source-control/hosted-review-git-options'
 import { cancelUnreadResponseBody } from '../lib/unread-response-body'
-import {
-  DEFAULT_API_BASE_URL,
-  authHeaders,
-  getEnvAuthConfig,
-  hasAuth,
-  type BitbucketAuthConfig
-} from './bitbucket-auth-config'
+import { authHeaders, getEnvAuthConfig, hasAuth } from './bitbucket-auth-config'
 import { accountNameFromUser, fetchBitbucketUser } from './user-request'
 import {
   getStoredBitbucketCredentialError,
   getStoredBitbucketMetadata,
   hasStoredBitbucketCredential,
-  loadStoredBitbucketSecret,
-  type BitbucketStoredMetadata,
-  type BitbucketStoredSecret
+  loadStoredBitbucketSecret
 } from './credential-store'
+import { resolveBitbucketAuthConfig, storedAuthConfig } from './resolve-auth'
 
 const REQUEST_TIMEOUT_MS = 5000
 const ALL_PULL_REQUEST_STATES = ['OPEN', 'MERGED', 'DECLINED', 'SUPERSEDED'] as const
@@ -43,39 +36,6 @@ export type BitbucketAuthStatus = {
 type RequestOptions = {
   searchParams?: Record<string, string | readonly string[]>
   timeoutMs?: number
-}
-
-function storedAuthConfig(
-  metadata: BitbucketStoredMetadata,
-  secret: BitbucketStoredSecret
-): BitbucketAuthConfig {
-  return {
-    baseUrl: metadata.baseUrl ?? DEFAULT_API_BASE_URL,
-    accessToken: metadata.authMode === 'token' ? secret.accessToken : null,
-    email: metadata.authMode === 'basic' ? metadata.email : null,
-    apiToken: metadata.authMode === 'basic' ? secret.apiToken : null
-  }
-}
-
-// Env vars win over in-app credentials so existing headless/SSH setups keep
-// working unchanged. The stored secret is decrypted lazily and only here, on a
-// real API call — never on a status read.
-function getAuthConfig(): BitbucketAuthConfig {
-  const env = getEnvAuthConfig()
-  if (hasAuth(env)) {
-    return env
-  }
-  const metadata = getStoredBitbucketMetadata()
-  if (!metadata) {
-    return env
-  }
-  try {
-    const secret = loadStoredBitbucketSecret({ force: true })
-    return secret ? storedAuthConfig(metadata, secret) : env
-  } catch {
-    // Decryption denied or unavailable: fall through as unauthenticated.
-    return env
-  }
 }
 
 function isStringArray(value: string | readonly string[]): value is readonly string[] {
@@ -111,7 +71,7 @@ async function requestJson<T>(
   // throws instead of collapsing to null so callers never report false not_found.
   throwOnFailure = false
 ): Promise<T | null> {
-  const config = getAuthConfig()
+  const config = resolveBitbucketAuthConfig()
   try {
     const response = await fetch(apiUrl(config.baseUrl, path, options.searchParams), {
       headers: {

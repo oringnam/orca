@@ -170,7 +170,7 @@ describe('forge provider interface', () => {
     ).toEqual([
       ['gitlab', true],
       ['github', true],
-      ['bitbucket', false],
+      ['bitbucket', true],
       ['azure-devops', true],
       ['gitea', true]
     ])

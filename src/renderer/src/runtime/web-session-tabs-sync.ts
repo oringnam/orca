@@ -8,6 +8,7 @@ import {
   AGENT_STATUS_STALE_AFTER_MS,
   type AgentStatusEntry
 } from '../../../shared/agent-status-types'
+import { agentEntryCompletionAt } from '../../../shared/agent-completion-time'
 import { agentProviderSessionsEqual } from '../../../shared/agent-session-resume'
 import type {
   RuntimeMobileSessionTabsResult,
@@ -987,12 +988,17 @@ function buildMirroredAgentStatusPatch(
       existing?.worktreeId !== entry.worktreeId || existing?.tabId !== entry.tabId
     const entryFreshnessChanged =
       !!existing && isAgentStatusFresh(existing, now) !== isAgentStatusFresh(entry, now)
+    const doneAttentionChanged =
+      existing?.state === 'done' &&
+      entry.state === 'done' &&
+      agentEntryCompletionAt(existing) !== agentEntryCompletionAt(entry)
     const entrySortRelevantChange =
       !existing ||
       existing.state !== entry.state ||
       !isAgentStatusFresh(existing, now) ||
       entryFreshnessChanged ||
       entryAttributionChanged ||
+      doneAttentionChanged ||
       isMirroredCommandCodeTurnBump(existing, entry)
     aggregateRelevantChange = aggregateRelevantChange || entrySortRelevantChange
     sortRelevantChange = sortRelevantChange || entrySortRelevantChange

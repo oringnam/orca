@@ -8722,7 +8722,9 @@
             "41ccade05c": "gh",
             "b79c21bd42": "github",
             "7166b9090c": "GitHub authentication via the gh CLI.",
-            "f16e41cc72": "GitHub Integration"
+            "f16e41cc72": "GitHub Integration",
+            "bitbucketDescription": "Bitbucket Cloud authentication with a saved API token or environment variables.",
+            "bitbucketAccessToken": "access token"
           }
         },
         "jira": {
@@ -10575,6 +10577,50 @@
           "on": "On",
           "auto": "Agent",
           "off": "Off"
+        },
+        "bitbucket": {
+          "credentials": {
+            "dialog": {
+              "connectFailed": "Connection failed",
+              "title": "Connect Bitbucket",
+              "description": "Use a Bitbucket Cloud credential to browse pull requests and build statuses. Orca verifies it before saving.",
+              "remoteRuntime": "Bitbucket credentials saved here are stored on this local machine only. Set ORCA_BITBUCKET_* environment variables on the remote runtime instead.",
+              "environmentManaged": "Bitbucket is already configured through ORCA_BITBUCKET_* environment variables, which take precedence. Unset them to save a credential in Orca.",
+              "authModeLabel": "Bitbucket authentication method",
+              "modeBasic": "Email & API token",
+              "modeToken": "Access token",
+              "accessToken": "Access token",
+              "accessTokenPlaceholder": "Repository, project, or workspace access token",
+              "email": "Atlassian account email",
+              "emailPlaceholder": "you@example.com",
+              "apiToken": "API token",
+              "apiTokenPlaceholder": "Atlassian API token",
+              "baseUrl": "API base URL (optional)",
+              "baseUrlPlaceholder": "https://api.bitbucket.org/2.0",
+              "tokenHint": "Repository, project, and workspace access tokens are created from the matching Bitbucket settings page and need read access to pull requests.",
+              "basicHint": "Create an Atlassian API token for your account, then pair it with the email address that owns it.",
+              "docsLink": "Bitbucket API token docs",
+              "storageNote": "Stored on this machine with encrypted storage when the OS keychain is available. ORCA_BITBUCKET_* environment variables always take precedence over what you save here.",
+              "cancel": "Cancel",
+              "verifying": "Verifying...",
+              "connect": "Connect"
+            }
+          },
+          "integration": {
+            "card": {
+              "description": "Pull requests and build statuses for Bitbucket Cloud.",
+              "edit": "Edit credentials",
+              "connect": "Connect",
+              "accountUnknown": "Bitbucket Cloud",
+              "authModeToken": "Access token",
+              "authModeBasic": "Email & API token",
+              "disconnect": "Disconnect Bitbucket",
+              "envManaged": "Configured via environment variables. Unset the ORCA_BITBUCKET_* variables to manage this credential in Orca.",
+              "storedAuthFailed": "The saved Bitbucket credential could not authenticate. Edit it, or check that the token still has pull request access.",
+              "storedCredential": "Saved in Orca on this machine. ORCA_BITBUCKET_* environment variables take precedence when set.",
+              "notConfigured": "Connect a Bitbucket Cloud account with an Atlassian API token or an access token. ORCA_BITBUCKET_* environment variables work too and take precedence."
+            }
+          }
         }
       },
       "right": {

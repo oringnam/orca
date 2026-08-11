@@ -1,4 +1,3 @@
-import { Buffer } from 'node:buffer'
 import type { CheckStatus } from '../../shared/types'
 import {
   deriveBitbucketBuildStatus,
@@ -15,17 +14,25 @@ import {
   type HostedReviewExecutionOptions
 } from '../source-control/hosted-review-git-options'
 import { cancelUnreadResponseBody } from '../lib/unread-response-body'
+import {
+  DEFAULT_API_BASE_URL,
+  authHeaders,
+  getEnvAuthConfig,
+  hasAuth,
+  type BitbucketAuthConfig
+} from './bitbucket-auth-config'
+import { accountNameFromUser, fetchBitbucketUser } from './user-request'
+import {
+  getStoredBitbucketCredentialError,
+  getStoredBitbucketMetadata,
+  hasStoredBitbucketCredential,
+  loadStoredBitbucketSecret,
+  type BitbucketStoredMetadata,
+  type BitbucketStoredSecret
+} from './credential-store'
 
-const DEFAULT_API_BASE_URL = 'https://api.bitbucket.org/2.0'
 const REQUEST_TIMEOUT_MS = 5000
 const ALL_PULL_REQUEST_STATES = ['OPEN', 'MERGED', 'DECLINED', 'SUPERSEDED'] as const
-
-type BitbucketAuthConfig = {
-  baseUrl: string
-  accessToken: string | null
-  email: string | null
-  apiToken: string | null
-}
 
 export type BitbucketAuthStatus = {
   configured: boolean
@@ -38,42 +45,49 @@ type RequestOptions = {
   timeoutMs?: number
 }
 
-function envValue(name: string): string | null {
-  const value = process.env[name]?.trim() ?? ''
-  return value.length > 0 ? value : null
-}
-
-function getAuthConfig(): BitbucketAuthConfig {
+function storedAuthConfig(
+  metadata: BitbucketStoredMetadata,
+  secret: BitbucketStoredSecret
+): BitbucketAuthConfig {
   return {
-    baseUrl: envValue('ORCA_BITBUCKET_API_BASE_URL') ?? DEFAULT_API_BASE_URL,
-    accessToken: envValue('ORCA_BITBUCKET_ACCESS_TOKEN'),
-    email: envValue('ORCA_BITBUCKET_EMAIL'),
-    apiToken: envValue('ORCA_BITBUCKET_API_TOKEN')
+    baseUrl: metadata.baseUrl ?? DEFAULT_API_BASE_URL,
+    accessToken: metadata.authMode === 'token' ? secret.accessToken : null,
+    email: metadata.authMode === 'basic' ? metadata.email : null,
+    apiToken: metadata.authMode === 'basic' ? secret.apiToken : null
   }
 }
 
-function hasAuth(config: BitbucketAuthConfig): boolean {
-  return Boolean(config.accessToken || (config.email && config.apiToken))
-}
-
-function authHeaders(config: BitbucketAuthConfig): Record<string, string> {
-  if (config.accessToken) {
-    return { Authorization: `Bearer ${config.accessToken}` }
+// Env vars win over in-app credentials so existing headless/SSH setups keep
+// working unchanged. The stored secret is decrypted lazily and only here, on a
+// real API call — never on a status read.
+function getAuthConfig(): BitbucketAuthConfig {
+  const env = getEnvAuthConfig()
+  if (hasAuth(env)) {
+    return env
   }
-  if (config.email && config.apiToken) {
-    const encoded = Buffer.from(`${config.email}:${config.apiToken}`).toString('base64')
-    return { Authorization: `Basic ${encoded}` }
+  const metadata = getStoredBitbucketMetadata()
+  if (!metadata) {
+    return env
   }
-  return {}
+  try {
+    const secret = loadStoredBitbucketSecret({ force: true })
+    return secret ? storedAuthConfig(metadata, secret) : env
+  } catch {
+    // Decryption denied or unavailable: fall through as unauthenticated.
+    return env
+  }
 }
 
 function isStringArray(value: string | readonly string[]): value is readonly string[] {
   return Array.isArray(value)
 }
 
-function apiUrl(path: string, searchParams?: RequestOptions['searchParams']): string {
-  const config = getAuthConfig()
-  const base = config.baseUrl.replace(/\/+$/, '')
+function apiUrl(
+  baseUrl: string,
+  path: string,
+  searchParams?: RequestOptions['searchParams']
+): string {
+  const base = baseUrl.replace(/\/+$/, '')
   const url = new URL(`${base}${path}`)
   if (searchParams) {
     for (const [key, value] of Object.entries(searchParams)) {
@@ -99,7 +113,7 @@ async function requestJson<T>(
 ): Promise<T | null> {
   const config = getAuthConfig()
   try {
-    const response = await fetch(apiUrl(path, options.searchParams), {
+    const response = await fetch(apiUrl(config.baseUrl, path, options.searchParams), {
       headers: {
         Accept: 'application/json',
         ...authHeaders(config)
@@ -157,21 +171,37 @@ async function normalizePullRequest(
   return mapBitbucketPullRequest(raw, status)
 }
 
+// Never decrypts. Env credentials are checked live; a stored credential is
+// revalidated only when its secret already sits in memory from an earlier API
+// call, and otherwise trusted from plaintext metadata — decrypting here would
+// prompt for keychain access every time Settings opens.
 export async function getBitbucketAuthStatus(): Promise<BitbucketAuthStatus> {
-  const config = getAuthConfig()
-  if (!hasAuth(config)) {
-    return { configured: false, authenticated: false, account: null }
+  const env = getEnvAuthConfig()
+  if (hasAuth(env)) {
+    const user = await fetchBitbucketUser(env)
+    return {
+      configured: true,
+      authenticated: user !== null,
+      account: accountNameFromUser(user)
+    }
   }
-  const user = await requestJson<{
-    username?: string | null
-    display_name?: string | null
-    account_id?: string | null
-  }>('/user', { timeoutMs: 4000 })
-  return {
-    configured: true,
-    authenticated: user !== null,
-    account: user?.username ?? user?.display_name ?? user?.account_id ?? null
+  const metadata = getStoredBitbucketMetadata()
+  if (metadata && hasStoredBitbucketCredential()) {
+    if (getStoredBitbucketCredentialError()) {
+      return { configured: true, authenticated: false, account: metadata.account }
+    }
+    const cached = loadStoredBitbucketSecret()
+    if (!cached) {
+      return { configured: true, authenticated: true, account: metadata.account }
+    }
+    const user = await fetchBitbucketUser(storedAuthConfig(metadata, cached))
+    return {
+      configured: true,
+      authenticated: user !== null,
+      account: accountNameFromUser(user) ?? metadata.account
+    }
   }
+  return { configured: false, authenticated: false, account: null }
 }
 
 export async function getBitbucketPullRequest(

@@ -2,6 +2,7 @@ import type { StateCreator } from 'zustand'
 import type { AppState } from '../types'
 import type { PublicKnownRuntimeEnvironment } from '../../../../shared/runtime-environments'
 import type { RuntimeStatus } from '../../../../shared/runtime-types'
+import { runtimeEnvironmentStatusesEqual } from './runtime-environment-status-equality'
 import {
   clearRecentRuntimeCompatibilityFailure,
   clearRuntimeCompatibilityCache
@@ -21,6 +22,8 @@ import { refreshRuntimeEnvironmentStatus } from './runtime-status-refresh'
 export type RuntimeEnvironmentStatus = {
   status: RuntimeStatus | null
   appVersion?: string | null
+  /** When the stored status was last *observed to change*; an unchanged re-probe
+   * is dropped rather than rewritten, so this is not a probe-freshness clock. */
   checkedAt: number
   connectionGeneration?: number
 }
@@ -186,7 +189,6 @@ export const createRuntimeStatusSlice: StateCreator<AppState, [], [], RuntimeSta
       clearRecentRuntimeCompatibilityFailure(environmentId, status.status)
     }
     set((s) => {
-      const next = new Map(s.runtimeStatusByEnvironmentId)
       const sessionEnded = status.status === null && previous?.status != null
       const connectionChanged =
         status.status !== null &&
@@ -200,10 +202,13 @@ export const createRuntimeStatusSlice: StateCreator<AppState, [], [], RuntimeSta
       if (activeEnvironmentId === environmentId && (sessionEnded || connectionChanged)) {
         bumpProviderRuntimeSessionGeneration()
       }
-      next.set(environmentId, {
-        ...status,
-        connectionGeneration
-      })
+      const nextEntry = { ...status, connectionGeneration }
+      const currentEntry = s.runtimeStatusByEnvironmentId.get(environmentId)
+      // Why: an unchanged re-probe must not invalidate every Map subscriber. Real
+      // transitions change `status` or advance `connectionGeneration`, so they still write.
+      const statusUnchanged = Boolean(
+        currentEntry && runtimeEnvironmentStatusesEqual(currentEntry, nextEntry)
+      )
       const environmentIndex = pairedDeviceId
         ? s.runtimeEnvironments.findIndex((environment) => environment.id === environmentId)
         : -1
@@ -214,9 +219,15 @@ export const createRuntimeStatusSlice: StateCreator<AppState, [], [], RuntimeSta
               index === environmentIndex ? { ...environment, pairedDeviceId } : environment
             )
           : s.runtimeEnvironments
+      const environmentsChanged = runtimeEnvironments !== s.runtimeEnvironments
+      if (statusUnchanged && !environmentsChanged) {
+        return s
+      }
       return {
-        runtimeStatusByEnvironmentId: next,
-        ...(runtimeEnvironments !== s.runtimeEnvironments ? { runtimeEnvironments } : {})
+        runtimeStatusByEnvironmentId: statusUnchanged
+          ? s.runtimeStatusByEnvironmentId
+          : new Map(s.runtimeStatusByEnvironmentId).set(environmentId, nextEntry),
+        ...(environmentsChanged ? { runtimeEnvironments } : {})
       }
     })
     if (options?.suppressDisconnectToast) {

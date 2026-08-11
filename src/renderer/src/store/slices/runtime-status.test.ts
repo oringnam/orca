@@ -201,6 +201,110 @@ describe('runtime-status slice', () => {
     ).toBe('client-device')
   })
 
+  it('still learns a paired device id when the re-probed status is unchanged', () => {
+    const store = createSliceStore()
+    // Why: the status arrives before the catalog, so only the second (identical) probe
+    // can carry the id onto the environment — the map guard must not swallow it.
+    const status = makeStatus({ pairedDeviceId: 'client-device' })
+    store.getState().setRuntimeEnvironmentStatus('env-a', { status, checkedAt: 1 })
+    store.getState().setRuntimeEnvironments([makeEnvironment()])
+    const before = store.getState().runtimeStatusByEnvironmentId
+
+    store.getState().setRuntimeEnvironmentStatus('env-a', { status, checkedAt: 2 })
+
+    expect(store.getState().runtimeEnvironments[0].pairedDeviceId).toBe('client-device')
+    expect(store.getState().runtimeStatusByEnvironmentId).toBe(before)
+  })
+
+  it('keeps the map reference when a re-probe returns an identical status', () => {
+    const store = createSliceStore()
+    store.getState().setRuntimeEnvironmentStatus('env-a', { status: makeStatus(), checkedAt: 1 })
+    const before = store.getState().runtimeStatusByEnvironmentId
+    const entryBefore = before.get('env-a')
+    const generationBefore = getRuntimeEnvironmentConnectionGeneration('env-a')
+
+    store.getState().setRuntimeEnvironmentStatus('env-a', { status: makeStatus(), checkedAt: 2 })
+
+    expect(store.getState().runtimeStatusByEnvironmentId).toBe(before)
+    expect(store.getState().runtimeStatusByEnvironmentId.get('env-a')).toBe(entryBefore)
+    expect(getRuntimeEnvironmentConnectionGeneration('env-a')).toBe(generationBefore)
+  })
+
+  it('keeps the map reference when an unreachable server is re-probed', () => {
+    const store = createSliceStore()
+    store.setState({ runtimeEnvironments: [makeEnvironment()] })
+    store.getState().setRuntimeEnvironmentStatus('env-a', { status: null, checkedAt: 1 })
+    const before = store.getState().runtimeStatusByEnvironmentId
+
+    store.getState().setRuntimeEnvironmentStatus('env-a', { status: null, checkedAt: 2 })
+
+    expect(store.getState().runtimeStatusByEnvironmentId).toBe(before)
+    expect(toast.warning).not.toHaveBeenCalled()
+  })
+
+  it('replaces the map when any status field changes, nested ones included', () => {
+    const store = createSliceStore()
+    store.getState().setRuntimeEnvironmentStatus('env-a', {
+      status: makeStatus({ liveTabCount: 1, capabilities: ['a'] }),
+      checkedAt: 1
+    })
+    const afterFirst = store.getState().runtimeStatusByEnvironmentId
+
+    store.getState().setRuntimeEnvironmentStatus('env-a', {
+      status: makeStatus({ liveTabCount: 2, capabilities: ['a'] }),
+      checkedAt: 2
+    })
+    const afterScalarChange = store.getState().runtimeStatusByEnvironmentId
+    expect(afterScalarChange).not.toBe(afterFirst)
+    expect(afterScalarChange.get('env-a')?.checkedAt).toBe(2)
+
+    store.getState().setRuntimeEnvironmentStatus('env-a', {
+      status: makeStatus({ liveTabCount: 2, capabilities: ['a', 'b'] }),
+      checkedAt: 3
+    })
+    const afterNestedChange = store.getState().runtimeStatusByEnvironmentId
+    expect(afterNestedChange).not.toBe(afterScalarChange)
+    expect(afterNestedChange.get('env-a')?.status?.capabilities).toEqual(['a', 'b'])
+  })
+
+  it('still writes and toasts across null and non-null transitions', () => {
+    const store = createSliceStore()
+    store.setState({ runtimeEnvironments: [makeEnvironment()] })
+    store.getState().setRuntimeEnvironmentStatus('env-a', { status: makeStatus(), checkedAt: 1 })
+    const connected = store.getState().runtimeStatusByEnvironmentId
+    const generationConnected = getRuntimeEnvironmentConnectionGeneration('env-a')
+
+    store.getState().setRuntimeEnvironmentStatus('env-a', { status: null, checkedAt: 2 })
+    const disconnected = store.getState().runtimeStatusByEnvironmentId
+    expect(disconnected).not.toBe(connected)
+    expect(disconnected.get('env-a')?.status).toBeNull()
+    expect(toast.warning).toHaveBeenCalledTimes(1)
+
+    store.getState().setRuntimeEnvironmentStatus('env-a', { status: makeStatus(), checkedAt: 3 })
+    const reconnected = store.getState().runtimeStatusByEnvironmentId
+    expect(reconnected).not.toBe(disconnected)
+    expect(getRuntimeEnvironmentConnectionGeneration('env-a')).toBe(generationConnected + 1)
+    expect(reconnected.get('env-a')?.connectionGeneration).toBe(generationConnected + 1)
+    expect(toast.dismiss).toHaveBeenCalledWith('runtime-environment-disconnected:env-a')
+  })
+
+  it('replaces the map when the same status arrives under a new runtime id', () => {
+    const store = createSliceStore()
+    store.getState().setRuntimeEnvironmentStatus('env-a', {
+      status: makeStatus({ runtimeId: 'runtime-a' }),
+      checkedAt: 1
+    })
+    const before = store.getState().runtimeStatusByEnvironmentId
+
+    store.getState().setRuntimeEnvironmentStatus('env-a', {
+      status: makeStatus({ runtimeId: 'runtime-b' }),
+      checkedAt: 2
+    })
+
+    expect(store.getState().runtimeStatusByEnvironmentId).not.toBe(before)
+    expect(store.getState().runtimeStatusByEnvironmentId.get('env-a')?.connectionGeneration).toBe(2)
+  })
+
   it('does not toast when the first probe finds a saved server offline', () => {
     const store = createSliceStore()
     store.setState({ runtimeEnvironments: [makeEnvironment()] })

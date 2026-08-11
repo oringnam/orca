@@ -151,6 +151,11 @@ export function BitbucketCredentialsDialog({
         overlayClassName={overlayClassName}
         className={cn('sm:max-w-lg', contentClassName)}
         onKeyDown={(event) => {
+          // Only from a text field: Enter on Cancel or the docs link must do
+          // what that control does, not submit the form.
+          if (!(event.target instanceof HTMLInputElement)) {
+            return
+          }
           if (event.key === 'Enter' && canSubmit) {
             event.preventDefault()
             void handleConnect()

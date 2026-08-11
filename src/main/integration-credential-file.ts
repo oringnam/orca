@@ -1,4 +1,4 @@
-import { statSync, writeFileSync } from 'node:fs'
+import { chmodSync, statSync, writeFileSync } from 'node:fs'
 import { safeStorage } from 'electron'
 import {
   credentialDecryptionMessage,
@@ -24,12 +24,25 @@ export function writeEncryptedCredential(
 ): void {
   if (safeStorage.isEncryptionAvailable()) {
     writeFileSync(path, safeStorage.encryptString(value), { mode: 0o600 })
+    restrictCredentialFileToOwner(path)
     return
   }
   console.warn(
     `[${service.toLowerCase()}] safeStorage encryption unavailable — storing credential in plaintext`
   )
   writeFileSync(path, value, { encoding: 'utf-8', mode: 0o600 })
+  restrictCredentialFileToOwner(path)
+}
+
+// Why: writeFileSync's `mode` only applies when it creates the file, so
+// rewriting an existing credential would silently keep looser permissions.
+// Windows has no POSIX modes, where chmod is a documented no-op.
+export function restrictCredentialFileToOwner(path: string): void {
+  try {
+    chmodSync(path, 0o600)
+  } catch {
+    // Best-effort hardening; the write itself already succeeded.
+  }
 }
 
 export class CredentialDecryptionError extends Error {

@@ -1,13 +1,14 @@
-import { chmodSync, existsSync, mkdtempSync, statSync } from 'node:fs'
+import { existsSync, mkdtempSync, statSync } from 'node:fs'
+import type * as Fs from 'node:fs'
 import { tmpdir } from 'node:os'
 import type * as Os from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 let tempHome = ''
 const decryptStringMock = vi.fn((value: Buffer) => value.toString('utf-8'))
 
-async function loadStore() {
+async function loadStore(options: { unlinkError?: NodeJS.ErrnoException } = {}) {
   vi.resetModules()
   vi.doMock('electron', () => ({
     safeStorage: {
@@ -20,20 +21,26 @@ async function loadStore() {
     const actual = await vi.importActual<typeof Os>('node:os')
     return { ...actual, homedir: () => tempHome }
   })
+  if (options.unlinkError) {
+    // Why mocked: chmod-based failure injection is not portable — Windows has no
+    // POSIX modes and a root/elevated runner can unlink through a 0500 directory.
+    const error = options.unlinkError
+    vi.doMock('node:fs', async () => {
+      const actual = await vi.importActual<typeof Fs>('node:fs')
+      return {
+        ...actual,
+        unlinkSync: () => {
+          throw error
+        }
+      }
+    })
+  }
   return import('./credential-store')
 }
 
 beforeEach(() => {
   tempHome = mkdtempSync(join(tmpdir(), 'orca-bitbucket-store-'))
   decryptStringMock.mockClear()
-})
-
-afterEach(() => {
-  // A test chmods the .orca dir read-only; restore so cleanup can proceed.
-  const dir = join(tempHome, '.orca')
-  if (existsSync(dir)) {
-    chmodSync(dir, 0o700)
-  }
 })
 
 describe('Bitbucket credential store', () => {
@@ -70,6 +77,31 @@ describe('Bitbucket credential store', () => {
       accessToken: 'access-secret',
       apiToken: null
     })
+
+    for (const file of ['bitbucket-credential.enc', 'bitbucket-credential.json']) {
+      expect(statSync(join(tempHome, '.orca', file)).mode & 0o777).toBe(0o600)
+    }
+  })
+
+  it('re-tightens permissions when overwriting an existing credential', async () => {
+    const store = await loadStore()
+    const save = (account: string): void =>
+      store.saveBitbucketCredential({
+        authMode: 'token',
+        email: null,
+        baseUrl: null,
+        account,
+        accessToken: 'access-secret',
+        apiToken: null
+      })
+    save('first')
+    // Why: writeFileSync's mode is ignored for an existing file, so a loosened
+    // credential would stay world-readable across a reconnect.
+    const { chmodSync } = await import('node:fs')
+    for (const file of ['bitbucket-credential.enc', 'bitbucket-credential.json']) {
+      chmodSync(join(tempHome, '.orca', file), 0o644)
+    }
+    save('second')
 
     for (const file of ['bitbucket-credential.enc', 'bitbucket-credential.json']) {
       expect(statSync(join(tempHome, '.orca', file)).mode & 0o777).toBe(0o600)
@@ -157,7 +189,10 @@ describe('Bitbucket credential store', () => {
   })
 
   it('surfaces a non-ENOENT delete failure instead of silently keeping the files', async () => {
-    const store = await loadStore()
+    const denied: NodeJS.ErrnoException = Object.assign(new Error('permission denied'), {
+      code: 'EACCES'
+    })
+    const store = await loadStore({ unlinkError: denied })
     store.saveBitbucketCredential({
       authMode: 'basic',
       email: 'ada@example.com',
@@ -167,12 +202,17 @@ describe('Bitbucket credential store', () => {
       apiToken: 'secret-token'
     })
 
-    // Read-only parent dir makes unlink fail with EACCES/EPERM. Clearing memory
-    // while the files survive would resurrect the credential on next launch.
-    chmodSync(join(tempHome, '.orca'), 0o500)
-    expect(() => store.clearStoredBitbucketCredential()).toThrow()
-    chmodSync(join(tempHome, '.orca'), 0o700)
-
+    // Clearing memory while the files survive would resurrect the credential on
+    // the next launch, so the failure has to reach the caller.
+    expect(() => store.clearStoredBitbucketCredential()).toThrow(/permission denied/)
     expect(existsSync(join(tempHome, '.orca', 'bitbucket-credential.enc'))).toBe(true)
+  })
+
+  it('ignores a missing file on disconnect', async () => {
+    const missing: NodeJS.ErrnoException = Object.assign(new Error('no such file'), {
+      code: 'ENOENT'
+    })
+    const store = await loadStore({ unlinkError: missing })
+    expect(() => store.clearStoredBitbucketCredential()).not.toThrow()
   })
 })

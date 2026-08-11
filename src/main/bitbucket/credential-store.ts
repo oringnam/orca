@@ -5,6 +5,7 @@ import {
   CredentialDecryptionError,
   credentialFileHasContent,
   readStoredCredentialToken,
+  restrictCredentialFileToOwner,
   writeEncryptedCredential
 } from '../integration-credential-file'
 import type { BitbucketAuthMode } from '../../shared/bitbucket-credentials'
@@ -162,6 +163,7 @@ export function saveBitbucketCredential(input: BitbucketCredentialSaveInput): vo
     encoding: 'utf-8',
     mode: 0o600
   })
+  restrictCredentialFileToOwner(getMetadataPath())
   cachedMetadata = metadata
   metadataLoadedFromDisk = true
   cachedSecret = secret

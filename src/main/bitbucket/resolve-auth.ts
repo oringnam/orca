@@ -1,5 +1,6 @@
 import {
   DEFAULT_API_BASE_URL,
+  envValue,
   getEnvAuthConfig,
   hasAuth,
   type BitbucketAuthConfig
@@ -16,7 +17,9 @@ export function storedAuthConfig(
   secret: BitbucketStoredSecret
 ): BitbucketAuthConfig {
   return {
-    baseUrl: metadata.baseUrl ?? DEFAULT_API_BASE_URL,
+    // Why: an explicit ORCA_BITBUCKET_API_BASE_URL still wins even when the
+    // credential itself is stored — env precedence is per-setting, not all-or-nothing.
+    baseUrl: envValue('ORCA_BITBUCKET_API_BASE_URL') ?? metadata.baseUrl ?? DEFAULT_API_BASE_URL,
     accessToken: metadata.authMode === 'token' ? secret.accessToken : null,
     email: metadata.authMode === 'basic' ? metadata.email : null,
     apiToken: metadata.authMode === 'basic' ? secret.apiToken : null

@@ -127,6 +127,25 @@ describe('Bitbucket credential connection', () => {
     })
   })
 
+  it('lets an env API base URL override the stored one without env credentials', async () => {
+    const conn = await loadModule()
+    globalThis.fetch = vi.fn(async () =>
+      Response.json({ username: 'ada' })
+    ) as unknown as typeof fetch
+    await conn.connectBitbucket({
+      authMode: 'basic',
+      email: 'ada@example.com',
+      apiToken: 'tok',
+      baseUrl: 'https://stored.example.com/2.0'
+    })
+
+    // Only the base URL is in the env, so `hasAuth(env)` is false — precedence
+    // is per-setting, not all-or-nothing.
+    process.env.ORCA_BITBUCKET_API_BASE_URL = 'https://env.example.com/2.0'
+    const { resolveBitbucketAuthConfig } = await import('./resolve-auth')
+    expect(resolveBitbucketAuthConfig().baseUrl).toBe('https://env.example.com/2.0')
+  })
+
   it('clears the stored connection on disconnect', async () => {
     const conn = await loadModule()
     globalThis.fetch = vi.fn(async () =>

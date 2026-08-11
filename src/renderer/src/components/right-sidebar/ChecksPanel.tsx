@@ -100,9 +100,10 @@ import type {
 } from './pr-comments-ai-launch-ack'
 import { parseGitHubIssueOrPRLink } from '../../../../shared/github-links'
 import { startFixChecksAgent } from '@/lib/fix-checks-agent-launch'
-import type {
-  HostedReviewCreationEligibility,
-  HostedReviewProvider
+import {
+  hostedReviewProviderSupportsDraft,
+  type HostedReviewCreationEligibility,
+  type HostedReviewProvider
 } from '../../../../shared/hosted-review'
 import { resolveHostedReviewCreationProvider } from '../../../../shared/hosted-review-creation-providers'
 import { normalizeGlobalWindowsRuntimeDefault } from '../../../../shared/project-execution-runtime'
@@ -4036,7 +4037,7 @@ export default function ChecksPanel(): React.JSX.Element {
         head: normalizeHostedReviewHeadRef(branch),
         title,
         body: prBody,
-        draft: prDraft,
+        draft: prDraft && hostedReviewProviderSupportsDraft(hostedReviewCreateProvider),
         worktreePath,
         useTemplate: prCreationDefaults.useTemplate
       })

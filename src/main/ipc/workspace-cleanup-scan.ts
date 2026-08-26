@@ -44,6 +44,8 @@ import {
   hasTargetedWorkspaceCleanupScan
 } from './workspace-cleanup-scan-targets'
 import { isWorktreeMetaOwnedByRepo } from '../worktree-metadata-ownership'
+import { getRepoExecutionHostId } from '../../shared/execution-host'
+import type { LocalProjectWorktreeGitOptions } from '../project-runtime-git-options'
 
 const WORKTREE_SCAN_CONCURRENCY = 3
 // Why: SSH repos pay a worktree-list round trip each; strictly serial repos
@@ -68,10 +70,20 @@ export async function scanWorkspaceCleanup(
     return { scannedAt, candidates: [], errors: [] }
   }
   const allRepos = store.getRepos()
+  const scopedRepoId = targetWorktreeIdsByRepo.size > 0 ? null : (args.repoId ?? null)
   const repos =
     targetWorktreeIdsByRepo.size > 0
       ? allRepos.filter((repo) => targetWorktreeIdsByRepo.has(repo.id))
-      : allRepos
+      : scopedRepoId
+        ? allRepos.filter(
+            (repo) =>
+              repo.id === scopedRepoId &&
+              // Why: repo ids repeat across execution hosts, so matching the id
+              // alone would pull another host's project into a scan the user
+              // aimed at one. An absent host id keeps the older, broader match.
+              (!args.executionHostId || getRepoExecutionHostId(repo) === args.executionHostId)
+          )
+        : allRepos
   const repoOwnerCountById = new Map<string, number>()
   for (const repo of allRepos) {
     repoOwnerCountById.set(repo.id, (repoOwnerCountById.get(repo.id) ?? 0) + 1)
@@ -94,6 +106,7 @@ export async function scanWorkspaceCleanup(
           targetWorktreeIds: targetWorktreeIdsByRepo.get(repo.id),
           refreshTargetActivity: args.worktreeId !== undefined || args.refreshActivity === true,
           includeAllWorkspaces: args.includeAllWorkspaces === true,
+          scopedRepoScan: scopedRepoId !== null,
           skipGitWorktreeIds: new Set(args.skipGitWorktreeIds ?? []),
           signal: options.signal,
           onWorktreesDiscovered: progress.addDiscovered,
@@ -121,6 +134,7 @@ async function scanRepoWorkspaces(
     targetWorktreeIds?: ReadonlySet<string>
     refreshTargetActivity: boolean
     includeAllWorkspaces: boolean
+    scopedRepoScan?: boolean
     skipGitWorktreeIds: Set<string>
     signal?: AbortSignal
   } & WorkspaceCleanupScanRepoProgress
@@ -133,6 +147,7 @@ async function scanRepoWorkspaces(
     targetWorktreeIds,
     refreshTargetActivity,
     includeAllWorkspaces,
+    scopedRepoScan = false,
     skipGitWorktreeIds,
     signal,
     onWorktreesDiscovered,
@@ -141,6 +156,7 @@ async function scanRepoWorkspaces(
   } = args
   const errors: WorkspaceCleanupScanResult['errors'] = []
   const repoIsFolder = isFolderRepo(repo)
+  let localGitOptions: LocalProjectWorktreeGitOptions = {}
   let provider: IGitProvider | null = null
   let gitWorktrees: GitWorktreeInfo[] = []
 
@@ -148,6 +164,7 @@ async function scanRepoWorkspaces(
     const discovered = await listCleanupGitWorktrees(store, repo, repoIsFolder, signal)
     provider = discovered.provider
     gitWorktrees = discovered.gitWorktrees
+    localGitOptions = discovered.localGitOptions
   } catch (error) {
     if (error instanceof WorkspaceCleanupScanCancelledError) {
       throw error
@@ -165,7 +182,7 @@ async function scanRepoWorkspaces(
     // Why: a disconnected host still owns real workspaces; the full list shows
     // them (blocked), while legacy scans keep omitting what they cannot inspect.
     const candidates =
-      targetWorktreeIds || includeAllWorkspaces
+      targetWorktreeIds || includeAllWorkspaces || scopedRepoScan
         ? synthesizeDisconnectedSshCleanupCandidates(
             store,
             repo,
@@ -197,7 +214,10 @@ async function scanRepoWorkspaces(
     ? mergedWorktrees.filter((worktree) => targetWorktreeIds.has(worktree.id))
     : mergedWorktrees.filter((worktree) =>
         shouldScanBroadWorkspaceCleanupWorktree({
-          includeAllWorkspaces,
+          // Why: a project-scoped scan wants every workspace listed for the same
+          // reason the full browser does — the idle threshold would hide the
+          // branch that merged this morning.
+          includeAllWorkspaces: includeAllWorkspaces || scopedRepoScan,
           repoIsFolder,
           worktree,
           scannedAt
@@ -241,7 +261,7 @@ async function scanRepoWorkspaces(
               fsActivityCache
             )
       const isInactive = isWorkspaceInactiveForCleanup(worktreeWithActivity, scannedAt)
-      if (!targetWorktreeIds && !includeAllWorkspaces && !isInactive) {
+      if (!targetWorktreeIds && !includeAllWorkspaces && !scopedRepoScan && !isInactive) {
         return null
       }
       if (!reportDiscoveredUpfront) {
@@ -255,8 +275,11 @@ async function scanRepoWorkspaces(
         // Why: full-fleet scans defer git for recently active rows; removal preflight
         // forces a fresh read before any selected row can be deleted.
         skipGit: skipGitWorktreeIds.has(worktreeWithActivity.id) || !isInactive,
-        forceGitCheck: Boolean(targetWorktreeIds),
-        signal
+        // Why: the merge proof is the whole point of a project-scoped scan, and
+        // it lives behind the git read that idle rows would otherwise skip.
+        forceGitCheck: Boolean(targetWorktreeIds) || scopedRepoScan,
+        signal,
+        localGitOptions
       }).catch((error) => {
         if (error instanceof WorkspaceCleanupScanCancelledError) {
           throw error
